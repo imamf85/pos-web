@@ -1,25 +1,65 @@
-import logo from './logo.svg';
-import './App.css';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './contexts/FirebaseAuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import Login from './components/Login';
+import AuthCallback from './components/AuthCallback';
+import MainLayout from './components/MainLayout';
+import POSPage from './components/POSPage';
+import SummaryPage from './components/SummaryPage';
+import ProductsPage from './components/ProductsPage';
+import StaffPage from './components/StaffPage';
+import { mockProducts } from './data/mockData';
+import customerService from './services/customerService';
+import styles from './styles/styles';
 
-function App() {
+const App = () => {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <AuthProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="/pos" replace />} />
+            <Route
+              path="pos"
+              element={
+                <POSPage
+                  mockProducts={mockProducts}
+                  customerService={customerService}
+                />
+              }
+            />
+            <Route path="summary" element={<SummaryPage styles={styles} />} />
+            <Route
+              path="products"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <ProductsPage styles={styles} />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="staff"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <StaffPage styles={styles} />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
-}
+};
 
 export default App;
