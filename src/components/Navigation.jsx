@@ -1,10 +1,11 @@
 import React from 'react';
-import { ShoppingCart, BarChart3, Settings, User } from 'lucide-react';
+import { ShoppingCart, BarChart3, Settings, User, FileText } from 'lucide-react';
 import { kebabTheme } from '../styles/kebabTheme';
 
 const Navigation = ({ currentPage, setCurrentPage, userRole }) => {
     const navItems = [
         { id: 'pos', label: 'POS', icon: ShoppingCart, forAll: true },
+        { id: 'orders', label: 'Pesanan', icon: FileText, forAll: true },
         { id: 'summary', label: 'Summary', icon: BarChart3, forAll: true },
         { id: 'products', label: 'Produk', icon: Settings, adminOnly: true },
         { id: 'staff', label: 'Staff', icon: User, adminOnly: true }

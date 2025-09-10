@@ -14,6 +14,7 @@ const MainLayout = () => {
   // Map route paths to page names
   const pathToPage = {
     '/pos': 'pos',
+    '/orders': 'orders',
     '/summary': 'summary',
     '/products': 'products',
     '/staff': 'staff'

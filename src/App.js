@@ -9,6 +9,7 @@ import POSPage from './components/POSPage';
 import SummaryPage from './components/SummaryPage';
 import ProductsPage from './components/ProductsPage';
 import StaffPage from './components/StaffPage';
+import OrdersPage from './components/OrdersPage';
 import { mockProducts } from './data/mockData';
 import customerService from './services/customerService';
 import styles from './styles/styles';
@@ -37,6 +38,7 @@ const App = () => {
                 />
               }
             />
+            <Route path="orders" element={<OrdersPage />} />
             <Route path="summary" element={<SummaryPage styles={styles} />} />
             <Route
               path="products"

@@ -6,18 +6,25 @@ import useResponsive from '../hooks/useResponsive';
 import productService from '../services/productService';
 import orderService from '../services/orderService';
 import { kebabTheme, commonStyles } from '../styles/kebabTheme';
+import { useAuth } from '../contexts/FirebaseAuthContext';
 
 const POSPage = ({ mockProducts, customerService }) => {
     const { isMobile } = useResponsive();
+    const { userProfile } = useAuth();
     const [selectedCategory, setSelectedCategory] = useState('kebab');
     const [cart, setCart] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [orderNumber, setOrderNumber] = useState(1);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [showPayment, setShowPayment] = useState(false);
+    const [showPaymentMethod, setShowPaymentMethod] = useState(false);
+    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
+    const [cashAmount, setCashAmount] = useState('');
     const [showCart, setShowCart] = useState(false);
     const [products, setProducts] = useState(Array.isArray(mockProducts) ? mockProducts : []);
     const [loading, setLoading] = useState(false);
+    const [unpaidOrders, setUnpaidOrders] = useState([]);
+    const [showUnpaidOrders, setShowUnpaidOrders] = useState(false);
 
     const categories = [
         { id: 'kebab', label: 'Kebab', emoji: '🥙' },
@@ -358,11 +365,77 @@ const POSPage = ({ mockProducts, customerService }) => {
             color: kebabTheme.colors.textSecondary,
             cursor: 'not-allowed',
             opacity: 0.6
+        },
+        // Unpaid Orders Styles
+        unpaidBadge: {
+            position: 'absolute',
+            top: '-8px',
+            right: '-8px',
+            background: kebabTheme.colors.warning || '#ffa500',
+            color: kebabTheme.colors.white,
+            minWidth: '24px',
+            height: '24px',
+            borderRadius: kebabTheme.borderRadius.full,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: kebabTheme.typography.fontSize.xs,
+            fontWeight: kebabTheme.typography.fontWeight.bold,
+            padding: '0 6px'
+        },
+        unpaidButton: {
+            ...commonStyles.button.base,
+            background: `${kebabTheme.colors.warning || '#ffa500'}20`,
+            border: `2px solid ${kebabTheme.colors.warning || '#ffa500'}`,
+            color: kebabTheme.colors.textPrimary,
+            padding: `${kebabTheme.spacing.md} ${kebabTheme.spacing.lg}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: kebabTheme.spacing.sm,
+            width: '100%',
+            marginBottom: kebabTheme.spacing.md,
+            position: 'relative'
+        },
+        unpaidOrdersPanel: {
+            ...commonStyles.card,
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            marginTop: kebabTheme.spacing.sm,
+            maxHeight: '400px',
+            overflowY: 'auto',
+            zIndex: 100,
+            boxShadow: kebabTheme.shadows.xl
+        },
+        unpaidOrderItem: {
+            padding: kebabTheme.spacing.md,
+            borderBottom: `1px solid ${kebabTheme.colors.bgSecondary}`,
+            cursor: 'pointer',
+            transition: kebabTheme.transitions.base
+        },
+        unpaidOrderCustomer: {
+            fontSize: kebabTheme.typography.fontSize.base,
+            fontWeight: kebabTheme.typography.fontWeight.semibold,
+            color: kebabTheme.colors.textPrimary,
+            marginBottom: kebabTheme.spacing.xs
+        },
+        unpaidOrderDetails: {
+            fontSize: kebabTheme.typography.fontSize.sm,
+            color: kebabTheme.colors.textSecondary,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+        },
+        unpaidOrderTotal: {
+            color: kebabTheme.colors.warning || '#ffa500',
+            fontWeight: kebabTheme.typography.fontWeight.semibold
         }
     };
 
     useEffect(() => {
         loadProducts();
+        loadUnpaidOrders();
     }, []);
 
     const loadProducts = async () => {
@@ -376,6 +449,20 @@ const POSPage = ({ mockProducts, customerService }) => {
             setProducts(fallbackProducts);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const loadUnpaidOrders = async () => {
+        try {
+            if (orderService && typeof orderService.getOrders === 'function') {
+                const orders = await orderService.getOrders({
+                    payment_status: 'unpaid'
+                });
+                setUnpaidOrders(Array.isArray(orders) ? orders : []);
+            }
+        } catch (error) {
+            console.error('Error loading unpaid orders:', error);
+            setUnpaidOrders([]);
         }
     };
 
@@ -406,36 +493,112 @@ const POSPage = ({ mockProducts, customerService }) => {
             return;
         }
 
-        setShowPayment(true);
+        setShowPaymentMethod(true);
     };
 
-    const handleConfirmOrder = async () => {
-        try {
-            const orderData = {
-                customer_id: selectedCustomer.id,
-                customer_name: selectedCustomer.name,
-                items: cart,
-                total_amount: getTotalAmount(),
-                order_number: `ORD-${Date.now()}`,
-                status: 'pending'
-            };
+    const handlePaymentMethodSelect = (method) => {
+        setSelectedPaymentMethod(method);
+        setShowPaymentMethod(false);
 
-            // If orderService is available, save the order
-            if (orderService && typeof orderService.createOrder === 'function') {
-                await orderService.createOrder(orderData);
+        if (method === 'unpaid') {
+            handleConfirmOrder(method);
+        } else {
+            setShowPayment(true);
+            setCashAmount('');
+        }
+    };
+
+    const handleConfirmOrder = async (paymentMethod = null) => {
+        try {
+            const totalAmount = getTotalAmount();
+
+            // Make sure paymentMethod is a string, not an event object
+            if (typeof paymentMethod === 'object' && paymentMethod !== null && paymentMethod.type) {
+                // This is an event object, not a payment method
+                paymentMethod = null;
             }
 
-            // Show success message
-            alert(`Pesanan berhasil dibuat!\nNomor Pesanan: ${orderData.order_number}\nCustomer: ${selectedCustomer.name}\nTotal: ${formatPrice(getTotalAmount())}`);
+            const currentPaymentMethod = paymentMethod || selectedPaymentMethod;
 
-            // Reset state
-            setCart([]);
-            setSelectedCustomer(null);
-            setShowPayment(false);
-            setOrderNumber(prev => prev + 1);
+            if (!currentPaymentMethod || typeof currentPaymentMethod !== 'string') {
+                console.error('Invalid payment method:', currentPaymentMethod);
+                alert('Metode pembayaran tidak valid');
+                return;
+            }
+
+            const changeAmount = currentPaymentMethod === 'cash' ? parseFloat(cashAmount) - totalAmount : 0;
+            const paymentStatus = currentPaymentMethod === 'unpaid' ? 'pending' : 'paid';
+            const orderStatus = currentPaymentMethod === 'unpaid' ? 'pending' : 'completed';
+
+            // Create orderData with only serializable data
+            const orderData = {
+                customer_id: selectedCustomer.id,
+                user_id: userProfile?.id || null,
+                total_amount: totalAmount,
+                payment_method: currentPaymentMethod === 'unpaid' ? 'cash' : currentPaymentMethod, // default to 'cash' for unpaid
+                payment_status: paymentStatus,
+                order_status: orderStatus,
+                notes: `Order via POS - Customer: ${selectedCustomer.name}${currentPaymentMethod === 'cash' && changeAmount > 0 ? ` - Cash: ${formatPrice(parseFloat(cashAmount))}, Change: ${formatPrice(changeAmount)}` : ''}${currentPaymentMethod === 'unpaid' ? ' - BELUM BAYAR' : ''}`,
+                items: cart.map(item => ({
+                    product_id: item.productId,
+                    quantity: item.quantity || 1,
+                    unit_price: item.unitPrice || item.price,
+                    total_price: item.price,
+                    options: item.options || {},
+                    notes: item.options?.specialNote || null
+                }))
+            };
+
+            console.log('Order data to be sent:', orderData);
+
+            let savedOrder = null;
+            if (orderService && typeof orderService.createOrder === 'function') {
+                try {
+                    savedOrder = await orderService.createOrder(orderData);
+                    console.log('Order saved successfully:', savedOrder);
+                } catch (dbError) {
+                    console.error('Database save failed:', dbError);
+                    alert(`Gagal menyimpan ke database: ${dbError.message}\n\nSilakan cek konsol untuk detail error.`);
+                    return;
+                }
+            } else {
+                console.error('OrderService not available');
+                alert('Service tidak tersedia. Silakan refresh halaman.');
+                return;
+            }
+
+            // Only proceed if order was saved successfully
+            if (savedOrder) {
+                const orderNumber = savedOrder.order_number || `ORD-${savedOrder.id}`;
+
+                let successMessage = `Pesanan berhasil dibuat!\nNomor Pesanan: ${orderNumber}\nCustomer: ${selectedCustomer.name}\nTotal: ${formatPrice(totalAmount)}\nMetode Pembayaran: ${currentPaymentMethod === 'cash' ? 'Tunai' : currentPaymentMethod === 'qris' ? 'QRIS' : 'BELUM BAYAR'}`;
+
+                if (currentPaymentMethod === 'cash' && changeAmount > 0) {
+                    successMessage += `\nUang Diterima: ${formatPrice(parseFloat(cashAmount))}\nKembalian: ${formatPrice(changeAmount)}`;
+                }
+
+                if (currentPaymentMethod === 'unpaid') {
+                    successMessage += `\n\n⚠️ STATUS: BELUM BAYAR\nPesanan ini menunggu pembayaran dari customer`;
+                }
+
+                alert(successMessage);
+
+                // Reset all states
+                setCart([]);
+                setSelectedCustomer(null);
+                setShowPayment(false);
+                setShowPaymentMethod(false);
+                setSelectedPaymentMethod(null);
+                setCashAmount('');
+                setOrderNumber(prev => prev + 1);
+
+                if (currentPaymentMethod === 'unpaid') {
+                    loadUnpaidOrders();
+                }
+            }
         } catch (error) {
-            console.error('Error creating order:', error);
-            alert('Gagal membuat pesanan. Silakan coba lagi.');
+            console.error('Error in handleConfirmOrder:', error);
+            alert(`Terjadi kesalahan: ${error.message}\n\nSilakan coba lagi atau cek konsol untuk detail.`);
         }
     };
 
@@ -536,13 +699,68 @@ const POSPage = ({ mockProducts, customerService }) => {
             {/* Cart Section - Desktop */}
             {!isMobile && (
                 <div style={posStyles.cartSection}>
-                    {/* Customer Selector */}
                     <CustomerSelector
                         selectedCustomer={selectedCustomer}
                         onCustomerSelect={setSelectedCustomer}
                         customerService={customerService}
                         styles={posStyles}
                     />
+
+                    {unpaidOrders.length > 0 && (
+                        <div style={{ position: 'relative' }}>
+                            <button
+                                style={posStyles.unpaidButton}
+                                onClick={() => setShowUnpaidOrders(!showUnpaidOrders)}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = kebabTheme.shadows.lg;
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = 'none';
+                                }}
+                            >
+                                <span style={{ fontSize: '1.2rem' }}>⏰</span>
+                                <span>Pesanan Belum Bayar</span>
+                                <span style={posStyles.unpaidBadge}>{unpaidOrders.length}</span>
+                            </button>
+
+                            {/* Unpaid Orders Panel */}
+                            {showUnpaidOrders && (
+                                <div style={posStyles.unpaidOrdersPanel}>
+                                    <div style={{
+                                        padding: kebabTheme.spacing.md,
+                                        borderBottom: `1px solid ${kebabTheme.colors.bgSecondary}`,
+                                        fontWeight: kebabTheme.typography.fontWeight.semibold
+                                    }}>
+                                        Pesanan Menunggu Pembayaran
+                                    </div>
+                                    {unpaidOrders.map(order => (
+                                        <div
+                                            key={order.id}
+                                            style={posStyles.unpaidOrderItem}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.backgroundColor = kebabTheme.colors.bgSecondary;
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                            }}
+                                        >
+                                            <div style={posStyles.unpaidOrderCustomer}>
+                                                {order.customers?.name || 'Customer'}
+                                            </div>
+                                            <div style={posStyles.unpaidOrderDetails}>
+                                                <span>Order #{order.id}</span>
+                                                <span style={posStyles.unpaidOrderTotal}>
+                                                    {formatPrice(order.total_amount)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Cart */}
                     <div style={posStyles.cartContainer}>
@@ -635,7 +853,198 @@ const POSPage = ({ mockProducts, customerService }) => {
                 </button>
             )}
 
-            {/* Product Options Modal */}
+            {/* Mobile Cart Modal */}
+            {isMobile && showCart && (
+                <div style={posStyles.modalOverlay}>
+                    <div style={{
+                        ...posStyles.modal,
+                        width: '95%',
+                        maxHeight: '90vh'
+                    }}>
+                        <div style={posStyles.modalHeader}>
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                            }}>
+                                <h3 style={posStyles.modalTitle}>
+                                    <ShoppingCart size={20} style={{ marginRight: kebabTheme.spacing.sm }} />
+                                    Keranjang
+                                </h3>
+                                <button
+                                    onClick={() => setShowCart(false)}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        fontSize: '24px',
+                                        cursor: 'pointer',
+                                        color: kebabTheme.colors.textSecondary,
+                                        padding: kebabTheme.spacing.sm
+                                    }}
+                                >×</button>
+                            </div>
+                        </div>
+
+                        <div style={posStyles.modalContent}>
+                            <div style={{ marginBottom: kebabTheme.spacing.lg }}>
+                                <CustomerSelector
+                                    selectedCustomer={selectedCustomer}
+                                    onCustomerSelect={setSelectedCustomer}
+                                    customerService={customerService}
+                                    styles={posStyles}
+                                />
+                            </div>
+
+                            {/* Unpaid Orders Button - Mobile */}
+                            {unpaidOrders.length > 0 && (
+                                <div style={{ position: 'relative', marginBottom: kebabTheme.spacing.lg }}>
+                                    <button
+                                        style={posStyles.unpaidButton}
+                                        onClick={() => setShowUnpaidOrders(!showUnpaidOrders)}
+                                    >
+                                        <span style={{ fontSize: '1.2rem' }}>⏰</span>
+                                        <span>Pesanan Belum Bayar</span>
+                                        <span style={posStyles.unpaidBadge}>{unpaidOrders.length}</span>
+                                    </button>
+
+                                    {/* Unpaid Orders Panel */}
+                                    {showUnpaidOrders && (
+                                        <div style={posStyles.unpaidOrdersPanel}>
+                                            <div style={{
+                                                padding: kebabTheme.spacing.md,
+                                                borderBottom: `1px solid ${kebabTheme.colors.bgSecondary}`,
+                                                fontWeight: kebabTheme.typography.fontWeight.semibold
+                                            }}>
+                                                Pesanan Menunggu Pembayaran
+                                            </div>
+                                            {unpaidOrders.map(order => (
+                                                <div
+                                                    key={order.id}
+                                                    style={posStyles.unpaidOrderItem}
+                                                    onClick={() => {
+                                                        setShowUnpaidOrders(false);
+                                                        setShowCart(false);
+                                                    }}
+                                                >
+                                                    <div style={posStyles.unpaidOrderCustomer}>
+                                                        {order.customers?.name || 'Customer'}
+                                                    </div>
+                                                    <div style={posStyles.unpaidOrderDetails}>
+                                                        <span>Order #{order.id}</span>
+                                                        <span style={posStyles.unpaidOrderTotal}>
+                                                            {formatPrice(order.total_amount)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Cart Items */}
+                            <div style={{ marginBottom: kebabTheme.spacing.lg }}>
+                                {cart.length === 0 ? (
+                                    <div style={{
+                                        textAlign: 'center',
+                                        padding: kebabTheme.spacing['3xl'],
+                                        color: kebabTheme.colors.textSecondary
+                                    }}>
+                                        <p>Keranjang kosong</p>
+                                        <p style={{ fontSize: kebabTheme.typography.fontSize.sm }}>
+                                            Tambahkan produk untuk memulai
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div style={{
+                                        maxHeight: '300px',
+                                        overflowY: 'auto'
+                                    }}>
+                                        {cart.map((item, index) => (
+                                            <div key={`${item.id}-${index}`} style={{
+                                                ...posStyles.cartItem,
+                                                marginBottom: kebabTheme.spacing.sm
+                                            }}>
+                                                <div style={posStyles.cartItemInfo}>
+                                                    <div style={posStyles.cartItemName}>{item.name}</div>
+                                                    {item.options && Object.keys(item.options).length > 0 && (
+                                                        <div style={posStyles.cartItemOptions}>
+                                                            {Object.entries(item.options)
+                                                                .filter(([key, value]) => key !== 'specialNote' && value &&
+                                                                    (Array.isArray(value) ? value.length > 0 : true))
+                                                                .map(([key, value]) =>
+                                                                    Array.isArray(value) ? value.join(', ') : value
+                                                                ).join(' • ')}
+                                                            {item.options.specialNote && (
+                                                                <div>Note: {item.options.specialNote}</div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    <div style={posStyles.cartItemPrice}>
+                                                        {formatPrice(item.price)}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    style={posStyles.removeButton}
+                                                    onClick={() => removeFromCart(item.id)}
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Total */}
+                            {cart.length > 0 && (
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    padding: kebabTheme.spacing.md,
+                                    background: kebabTheme.colors.bgSecondary,
+                                    borderRadius: kebabTheme.borderRadius.md,
+                                    marginBottom: kebabTheme.spacing.lg
+                                }}>
+                                    <span style={{
+                                        fontSize: kebabTheme.typography.fontSize.lg,
+                                        fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                        color: kebabTheme.colors.textPrimary
+                                    }}>Total</span>
+                                    <span style={{
+                                        fontSize: kebabTheme.typography.fontSize.xl,
+                                        fontWeight: kebabTheme.typography.fontWeight.bold,
+                                        color: kebabTheme.colors.primary
+                                    }}>{formatPrice(getTotalAmount())}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={posStyles.modalFooter}>
+                            <button
+                                style={{
+                                    ...posStyles.button,
+                                    ...posStyles.buttonPrimary,
+                                    width: '100%',
+                                    padding: kebabTheme.spacing.lg,
+                                    opacity: cart.length === 0 || !selectedCustomer ? 0.5 : 1,
+                                    cursor: cart.length === 0 || !selectedCustomer ? 'not-allowed' : 'pointer'
+                                }}
+                                onClick={() => {
+                                    setShowCart(false);
+                                    handleCheckout();
+                                }}
+                                disabled={cart.length === 0 || !selectedCustomer}
+                            >
+                                <Check size={20} style={{ marginRight: kebabTheme.spacing.sm }} />
+                                Proses Pesanan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {selectedProduct && (
                 <ProductOptionsModal
                     product={selectedProduct}
@@ -800,8 +1209,8 @@ const POSPage = ({ mockProducts, customerService }) => {
                 />
             )}
 
-            {/* Payment Confirmation Modal */}
-            {showPayment && (
+            {/* Payment Method Selection Modal */}
+            {showPaymentMethod && (
                 <div style={posStyles.modalOverlay}>
                     <div style={posStyles.modal}>
                         <div style={posStyles.modalHeader}>
@@ -810,9 +1219,9 @@ const POSPage = ({ mockProducts, customerService }) => {
                                 justifyContent: 'space-between',
                                 alignItems: 'center'
                             }}>
-                                <h3 style={posStyles.modalTitle}>Konfirmasi Pesanan</h3>
-                                <button 
-                                    onClick={() => setShowPayment(false)} 
+                                <h3 style={posStyles.modalTitle}>Pilih Metode Pembayaran</h3>
+                                <button
+                                    onClick={() => setShowPaymentMethod(false)}
                                     style={{
                                         background: 'none',
                                         border: 'none',
@@ -824,90 +1233,17 @@ const POSPage = ({ mockProducts, customerService }) => {
                                 >×</button>
                             </div>
                         </div>
-                        
+
                         <div style={posStyles.modalContent}>
-                            {/* Customer Info */}
-                            <div style={{ marginBottom: kebabTheme.spacing.lg }}>
-                                <h4 style={{ 
-                                    margin: `0 0 ${kebabTheme.spacing.sm} 0`,
-                                    color: kebabTheme.colors.textPrimary,
-                                    fontSize: kebabTheme.typography.fontSize.base,
-                                    fontWeight: kebabTheme.typography.fontWeight.semibold
-                                }}>Customer</h4>
-                                <p style={{ 
-                                    margin: 0,
-                                    color: kebabTheme.colors.textSecondary,
-                                    fontSize: kebabTheme.typography.fontSize.sm
-                                }}>{selectedCustomer?.name}</p>
-                            </div>
-
-                            {/* Order Items */}
-                            <div style={{ marginBottom: kebabTheme.spacing.lg }}>
-                                <h4 style={{ 
-                                    margin: `0 0 ${kebabTheme.spacing.sm} 0`,
-                                    color: kebabTheme.colors.textPrimary,
-                                    fontSize: kebabTheme.typography.fontSize.base,
-                                    fontWeight: kebabTheme.typography.fontWeight.semibold
-                                }}>Detail Pesanan</h4>
-                                
-                                <div style={{ 
-                                    maxHeight: '200px',
-                                    overflowY: 'auto',
-                                    border: `1px solid ${kebabTheme.colors.bgSecondary}`,
-                                    borderRadius: kebabTheme.borderRadius.md,
-                                    padding: kebabTheme.spacing.sm
-                                }}>
-                                    {cart.map((item, index) => (
-                                        <div key={`${item.id}-${index}`} style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'flex-start',
-                                            padding: kebabTheme.spacing.sm,
-                                            borderBottom: index < cart.length - 1 ? `1px solid ${kebabTheme.colors.bgSecondary}` : 'none'
-                                        }}>
-                                            <div style={{ flex: 1 }}>
-                                                <div style={{ 
-                                                    fontSize: kebabTheme.typography.fontSize.sm,
-                                                    fontWeight: kebabTheme.typography.fontWeight.medium,
-                                                    color: kebabTheme.colors.textPrimary
-                                                }}>{item.name} x {item.quantity}</div>
-                                                {item.options && Object.keys(item.options).length > 0 && (
-                                                    <div style={{ 
-                                                        fontSize: kebabTheme.typography.fontSize.xs,
-                                                        color: kebabTheme.colors.textSecondary,
-                                                        marginTop: '2px'
-                                                    }}>
-                                                        {Object.entries(item.options)
-                                                            .filter(([key, value]) => key !== 'specialNote' && value && 
-                                                                (Array.isArray(value) ? value.length > 0 : true))
-                                                            .map(([key, value]) => 
-                                                                Array.isArray(value) ? value.join(', ') : value
-                                                            ).join(' • ')}
-                                                        {item.options.specialNote && (
-                                                            <div>Note: {item.options.specialNote}</div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div style={{ 
-                                                fontSize: kebabTheme.typography.fontSize.sm,
-                                                fontWeight: kebabTheme.typography.fontWeight.semibold,
-                                                color: kebabTheme.colors.primary
-                                            }}>{formatPrice(item.price)}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Total */}
+                            {/* Total Amount */}
                             <div style={{
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
-                                padding: kebabTheme.spacing.md,
+                                padding: kebabTheme.spacing.lg,
                                 background: kebabTheme.colors.bgSecondary,
                                 borderRadius: kebabTheme.borderRadius.md,
-                                marginBottom: kebabTheme.spacing.lg
+                                marginBottom: kebabTheme.spacing.xl
                             }}>
                                 <span style={{
                                     fontSize: kebabTheme.typography.fontSize.lg,
@@ -915,38 +1251,380 @@ const POSPage = ({ mockProducts, customerService }) => {
                                     color: kebabTheme.colors.textPrimary
                                 }}>Total Pesanan</span>
                                 <span style={{
-                                    fontSize: kebabTheme.typography.fontSize.xl,
+                                    fontSize: kebabTheme.typography.fontSize['2xl'],
                                     fontWeight: kebabTheme.typography.fontWeight.bold,
                                     color: kebabTheme.colors.primary
                                 }}>{formatPrice(getTotalAmount())}</span>
                             </div>
-                        </div>
 
-                        <div style={posStyles.modalFooter}>
-                            <div style={{ display: 'flex', gap: kebabTheme.spacing.md }}>
+                            {/* Payment Method Options */}
+                            <div style={{
+                                display: 'grid',
+                                gap: kebabTheme.spacing.md,
+                                marginBottom: kebabTheme.spacing.lg
+                            }}>
+                                {/* Cash Option */}
                                 <button
-                                    onClick={() => setShowPayment(false)}
+                                    onClick={() => handlePaymentMethodSelect('cash')}
                                     style={{
                                         ...posStyles.button,
                                         ...posStyles.buttonSecondary,
-                                        flex: 1,
-                                        padding: kebabTheme.spacing.md
+                                        padding: kebabTheme.spacing.xl,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: kebabTheme.spacing.md,
+                                        fontSize: kebabTheme.typography.fontSize.lg,
+                                        fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                        border: `2px solid ${kebabTheme.colors.bgSecondary}`,
+                                        transition: kebabTheme.transitions.base
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = kebabTheme.colors.primary;
+                                        e.currentTarget.style.background = `${kebabTheme.colors.primary}10`;
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = kebabTheme.colors.bgSecondary;
+                                        e.currentTarget.style.background = kebabTheme.colors.white;
                                     }}
                                 >
-                                    Batal
+                                    <span style={{ fontSize: '2rem' }}>💵</span>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <div>Cash / Tunai</div>
+                                        <div style={{
+                                            fontSize: kebabTheme.typography.fontSize.sm,
+                                            color: kebabTheme.colors.textSecondary,
+                                            fontWeight: kebabTheme.typography.fontWeight.normal
+                                        }}>Pembayaran dengan uang tunai</div>
+                                    </div>
                                 </button>
+
+                                {/* QRIS Option */}
                                 <button
-                                    onClick={handleConfirmOrder}
+                                    onClick={() => handlePaymentMethodSelect('qris')}
                                     style={{
                                         ...posStyles.button,
-                                        ...posStyles.buttonPrimary,
-                                        flex: 1,
-                                        padding: kebabTheme.spacing.md
+                                        ...posStyles.buttonSecondary,
+                                        padding: kebabTheme.spacing.xl,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: kebabTheme.spacing.md,
+                                        fontSize: kebabTheme.typography.fontSize.lg,
+                                        fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                        border: `2px solid ${kebabTheme.colors.bgSecondary}`,
+                                        transition: kebabTheme.transitions.base
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = kebabTheme.colors.primary;
+                                        e.currentTarget.style.background = `${kebabTheme.colors.primary}10`;
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = kebabTheme.colors.bgSecondary;
+                                        e.currentTarget.style.background = kebabTheme.colors.white;
                                     }}
                                 >
-                                    Konfirmasi Pesanan
+                                    <span style={{ fontSize: '2rem' }}>📱</span>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <div>QRIS</div>
+                                        <div style={{
+                                            fontSize: kebabTheme.typography.fontSize.sm,
+                                            color: kebabTheme.colors.textSecondary,
+                                            fontWeight: kebabTheme.typography.fontWeight.normal
+                                        }}>Pembayaran dengan scan QR code</div>
+                                    </div>
+                                </button>
+
+                                {/* Belum Bayar Option */}
+                                <button
+                                    onClick={() => handlePaymentMethodSelect('unpaid')}
+                                    style={{
+                                        ...posStyles.button,
+                                        ...posStyles.buttonSecondary,
+                                        padding: kebabTheme.spacing.xl,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: kebabTheme.spacing.md,
+                                        fontSize: kebabTheme.typography.fontSize.lg,
+                                        fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                        border: `2px solid ${kebabTheme.colors.warning || '#ffa500'}`,
+                                        transition: kebabTheme.transitions.base,
+                                        background: `${kebabTheme.colors.warning || '#ffa500'}10`
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = kebabTheme.colors.warning || '#ffa500';
+                                        e.currentTarget.style.background = `${kebabTheme.colors.warning || '#ffa500'}20`;
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = kebabTheme.colors.warning || '#ffa500';
+                                        e.currentTarget.style.background = `${kebabTheme.colors.warning || '#ffa500'}10`;
+                                    }}
+                                >
+                                    <span style={{ fontSize: '2rem' }}>⏰</span>
+                                    <div style={{ textAlign: 'left' }}>
+                                        <div>Belum Bayar</div>
+                                        <div style={{
+                                            fontSize: kebabTheme.typography.fontSize.sm,
+                                            color: kebabTheme.colors.textSecondary,
+                                            fontWeight: kebabTheme.typography.fontWeight.normal
+                                        }}>Customer akan bayar nanti</div>
+                                    </div>
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showPayment && (
+                <div style={posStyles.modalOverlay}>
+                    <div style={posStyles.modal}>
+                        <div style={posStyles.modalHeader}>
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                            }}>
+                                <h3 style={posStyles.modalTitle}>
+                                    {selectedPaymentMethod === 'cash' ? 'Pembayaran Tunai' : 'Pembayaran QRIS'}
+                                </h3>
+                                <button
+                                    onClick={() => {
+                                        setShowPayment(false);
+                                        setSelectedPaymentMethod(null);
+                                        setCashAmount('');
+                                    }}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        fontSize: '24px',
+                                        cursor: 'pointer',
+                                        color: kebabTheme.colors.textSecondary,
+                                        padding: kebabTheme.spacing.sm
+                                    }}
+                                >×</button>
+                            </div>
+                        </div>
+
+                        <div style={posStyles.modalContent}>
+                            {selectedPaymentMethod === 'cash' ? (
+                                // Cash Payment Interface
+                                <>
+                                    {/* Total Amount */}
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        padding: kebabTheme.spacing.lg,
+                                        background: kebabTheme.colors.bgSecondary,
+                                        borderRadius: kebabTheme.borderRadius.md,
+                                        marginBottom: kebabTheme.spacing.lg
+                                    }}>
+                                        <span style={{
+                                            fontSize: kebabTheme.typography.fontSize.lg,
+                                            fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                            color: kebabTheme.colors.textPrimary
+                                        }}>Total Pesanan</span>
+                                        <span style={{
+                                            fontSize: kebabTheme.typography.fontSize['2xl'],
+                                            fontWeight: kebabTheme.typography.fontWeight.bold,
+                                            color: kebabTheme.colors.primary
+                                        }}>{formatPrice(getTotalAmount())}</span>
+                                    </div>
+
+                                    {/* Cash Input */}
+                                    <div style={{ marginBottom: kebabTheme.spacing.lg }}>
+                                        <label style={{
+                                            ...posStyles.label,
+                                            marginBottom: kebabTheme.spacing.md
+                                        }}>Jumlah Uang Diterima</label>
+                                        <input
+                                            type="number"
+                                            value={cashAmount}
+                                            onChange={(e) => setCashAmount(e.target.value)}
+                                            placeholder="0"
+                                            style={{
+                                                ...posStyles.input,
+                                                fontSize: kebabTheme.typography.fontSize.lg,
+                                                fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                                textAlign: 'center',
+                                                padding: kebabTheme.spacing.lg
+                                            }}
+                                            autoFocus
+                                        />
+                                    </div>
+
+                                    {/* Change Calculation */}
+                                    {cashAmount && !isNaN(parseFloat(cashAmount)) && parseFloat(cashAmount) >= getTotalAmount() && (
+                                        <div style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            padding: kebabTheme.spacing.lg,
+                                            background: `${kebabTheme.colors.secondary}20`,
+                                            borderRadius: kebabTheme.borderRadius.md,
+                                            marginBottom: kebabTheme.spacing.lg,
+                                            border: `2px solid ${kebabTheme.colors.secondary}`
+                                        }}>
+                                            <span style={{
+                                                fontSize: kebabTheme.typography.fontSize.lg,
+                                                fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                                color: kebabTheme.colors.textPrimary
+                                            }}>Kembalian</span>
+                                            <span style={{
+                                                fontSize: kebabTheme.typography.fontSize['2xl'],
+                                                fontWeight: kebabTheme.typography.fontWeight.bold,
+                                                color: kebabTheme.colors.secondary
+                                            }}>{formatPrice(parseFloat(cashAmount) - getTotalAmount())}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Insufficient Cash Warning */}
+                                    {cashAmount && !isNaN(parseFloat(cashAmount)) && parseFloat(cashAmount) < getTotalAmount() && (
+                                        <div style={{
+                                            padding: kebabTheme.spacing.md,
+                                            background: `${kebabTheme.colors.error}20`,
+                                            borderRadius: kebabTheme.borderRadius.md,
+                                            marginBottom: kebabTheme.spacing.lg,
+                                            border: `1px solid ${kebabTheme.colors.error}`,
+                                            textAlign: 'center'
+                                        }}>
+                                            <span style={{
+                                                color: kebabTheme.colors.error,
+                                                fontSize: kebabTheme.typography.fontSize.sm,
+                                                fontWeight: kebabTheme.typography.fontWeight.medium
+                                            }}>
+                                                Uang tidak mencukupi. Kurang {formatPrice(getTotalAmount() - parseFloat(cashAmount))}
+                                            </span>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                // QRIS Payment Interface
+                                <>
+                                    {/* Total Amount */}
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        padding: kebabTheme.spacing.lg,
+                                        background: kebabTheme.colors.bgSecondary,
+                                        borderRadius: kebabTheme.borderRadius.md,
+                                        marginBottom: kebabTheme.spacing.xl
+                                    }}>
+                                        <span style={{
+                                            fontSize: kebabTheme.typography.fontSize.lg,
+                                            fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                            color: kebabTheme.colors.textPrimary
+                                        }}>Total Pesanan</span>
+                                        <span style={{
+                                            fontSize: kebabTheme.typography.fontSize['2xl'],
+                                            fontWeight: kebabTheme.typography.fontWeight.bold,
+                                            color: kebabTheme.colors.primary
+                                        }}>{formatPrice(getTotalAmount())}</span>
+                                    </div>
+
+                                    {/* QR Code Placeholder */}
+                                    <div style={{
+                                        textAlign: 'center',
+                                        padding: kebabTheme.spacing['3xl'],
+                                        background: kebabTheme.colors.bgSecondary,
+                                        borderRadius: kebabTheme.borderRadius.lg,
+                                        marginBottom: kebabTheme.spacing.xl
+                                    }}>
+                                        <div style={{
+                                            fontSize: '4rem',
+                                            marginBottom: kebabTheme.spacing.md
+                                        }}>📱</div>
+                                        <h4 style={{
+                                            margin: `0 0 ${kebabTheme.spacing.sm} 0`,
+                                            color: kebabTheme.colors.textPrimary,
+                                            fontSize: kebabTheme.typography.fontSize.lg,
+                                            fontWeight: kebabTheme.typography.fontWeight.semibold
+                                        }}>Scan QR Code</h4>
+                                        <p style={{
+                                            margin: 0,
+                                            color: kebabTheme.colors.textSecondary,
+                                            fontSize: kebabTheme.typography.fontSize.sm
+                                        }}>Customer scan QR code untuk melakukan pembayaran</p>
+                                    </div>
+
+                                    {/* Payment Status */}
+                                    <div style={{
+                                        textAlign: 'center',
+                                        marginBottom: kebabTheme.spacing.lg
+                                    }}>
+                                        <p style={{
+                                            color: kebabTheme.colors.textSecondary,
+                                            fontSize: kebabTheme.typography.fontSize.base,
+                                            marginBottom: kebabTheme.spacing.md
+                                        }}>Apakah customer sudah melakukan pembayaran?</p>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <div style={posStyles.modalFooter}>
+                            {selectedPaymentMethod === 'cash' ? (
+                                <div style={{ display: 'flex', gap: kebabTheme.spacing.md }}>
+                                    <button
+                                        onClick={() => {
+                                            setShowPayment(false);
+                                            setSelectedPaymentMethod(null);
+                                            setCashAmount('');
+                                        }}
+                                        style={{
+                                            ...posStyles.button,
+                                            ...posStyles.buttonSecondary,
+                                            flex: 1,
+                                            padding: kebabTheme.spacing.md
+                                        }}
+                                    >
+                                        Batal
+                                    </button>
+                                    <button
+                                        onClick={handleConfirmOrder}
+                                        disabled={!cashAmount || isNaN(parseFloat(cashAmount)) || parseFloat(cashAmount) < getTotalAmount()}
+                                        style={{
+                                            ...posStyles.button,
+                                            ...((!cashAmount || isNaN(parseFloat(cashAmount)) || parseFloat(cashAmount) < getTotalAmount())
+                                                ? posStyles.buttonDisabled
+                                                : posStyles.buttonPrimary),
+                                            flex: 1,
+                                            padding: kebabTheme.spacing.md
+                                        }}
+                                    >
+                                        Konfirmasi Pembayaran
+                                    </button>
+                                </div>
+                            ) : (
+                                // QRIS Payment Buttons
+                                <div style={{ display: 'flex', gap: kebabTheme.spacing.md }}>
+                                    <button
+                                        onClick={() => {
+                                            setShowPayment(false);
+                                            setSelectedPaymentMethod(null);
+                                        }}
+                                        style={{
+                                            ...posStyles.button,
+                                            ...posStyles.buttonSecondary,
+                                            flex: 1,
+                                            padding: kebabTheme.spacing.md
+                                        }}
+                                    >
+                                        Belum Bayar
+                                    </button>
+                                    <button
+                                        onClick={handleConfirmOrder}
+                                        style={{
+                                            ...posStyles.button,
+                                            ...posStyles.buttonPrimary,
+                                            flex: 1,
+                                            padding: kebabTheme.spacing.md
+                                        }}
+                                    >
+                                        Sudah Bayar
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
