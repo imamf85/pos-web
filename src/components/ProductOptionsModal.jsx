@@ -1,67 +1,114 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import useResponsive from '../hooks/useResponsive';
+import productService from '../services/productService';
 
 const ProductOptionsModal = ({ product, category, isOpen, onClose, onAddToCart, styles }) => {
     const { isMobile } = useResponsive();
-    const [options, setOptions] = useState({
-        spiceLevel: 'tidak pedas',
-        meatType: 'ayam',
-        size: 'regular',
-        additionalToppings: [],
-        specialNote: ''
-    });
-
+    const [options, setOptions] = useState({});
     const [quantity, setQuantity] = useState(1);
+    const [productOptions, setProductOptions] = useState({});
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (isOpen && product?.id) {
+            loadProductOptions();
+        }
+    }, [isOpen, product?.id]);
 
     if (!isOpen) return null;
 
-    const spiceLevels = ['tidak pedas', 'sedang', 'pedas'];
-    const meatTypes = ['ayam', 'daging', 'mixed'];
-    const sizes = ['small', 'regular', 'jumbo'];
+    const loadProductOptions = async () => {
+        setLoading(true);
+        try {
+            const optionsData = await productService.getProductOptions(product.category_id);
+            setProductOptions(optionsData);
 
-    const kebabToppings = ['Keju', 'Extra Chicken', 'Extra Daging', 'Extra Lettuce', 'Extra Bombay', 'Extra Nanas'];
-    const burgerToppings = ['Extra Beef', 'Keju', 'Extra Lettuce'];
-
-    const sizeMultiplier = { small: 0.8, regular: 1, jumbo: 1.3 };
-    const toppingPrice = 5000;
+            const defaultOptions = {};
+            Object.keys(optionsData).forEach(optionType => {
+                if (optionType === 'topping') {
+                    defaultOptions[optionType] = [];
+                } else if (optionsData[optionType]?.length > 0) {
+                    const defaultValue = optionsData[optionType].find(opt =>
+                        opt.value === 'regular' || opt.value === 'tidak pedas' || opt.value === 'ayam'
+                    )?.value || optionsData[optionType][0].value;
+                    defaultOptions[optionType] = defaultValue;
+                }
+            });
+            defaultOptions.specialNote = '';
+            setOptions(defaultOptions);
+        } catch (error) {
+            console.error('Error loading product options:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const calculatePrice = () => {
-        let basePrice = product.price * sizeMultiplier[options.size];
-        let toppingsPrice = options.additionalToppings.length * toppingPrice;
-        return Math.round((basePrice + toppingsPrice) * quantity);
+        let basePrice = product.price;
+        let additionalPrice = 0;
+
+        Object.keys(options).forEach(optionType => {
+            if (optionType === 'topping' && Array.isArray(options[optionType])) {
+                // Handle multiple toppings
+                options[optionType].forEach(toppingValue => {
+                    const topping = productOptions.topping?.find(t => t.value === toppingValue);
+                    if (topping) {
+                        additionalPrice += topping.additionalPrice || 0;
+                    }
+                });
+            } else if (optionType !== 'specialNote' && options[optionType]) {
+                // Handle single selection options
+                const optionData = productOptions[optionType]?.find(opt => opt.value === options[optionType]);
+                if (optionData) {
+                    additionalPrice += optionData.additionalPrice || 0;
+                }
+            }
+        });
+
+        return Math.round((basePrice + additionalPrice) * quantity);
     };
 
     const handleToppingToggle = (topping) => {
         setOptions(prev => ({
             ...prev,
-            additionalToppings: prev.additionalToppings.includes(topping)
-                ? prev.additionalToppings.filter(t => t !== topping)
-                : [...prev.additionalToppings, topping]
+            topping: prev.topping?.includes(topping)
+                ? prev.topping.filter(t => t !== topping)
+                : [...(prev.topping || []), topping]
         }));
     };
 
     const handleAddToCart = () => {
+        const totalPrice = calculatePrice();
+        const unitPrice = totalPrice / quantity;
+
         const cartItem = {
             id: Date.now(),
             productId: product.id,
             name: product.name,
             category,
             quantity,
-            price: calculatePrice(),
-            unitPrice: Math.round(product.price * sizeMultiplier[options.size] + options.additionalToppings.length * toppingPrice),
+            price: totalPrice,
+            unitPrice: unitPrice,
             options: { ...options }
         };
         onAddToCart(cartItem);
         onClose();
         setQuantity(1);
-        setOptions({
-            spiceLevel: 'tidak pedas',
-            meatType: 'ayam',
-            size: 'regular',
-            additionalToppings: [],
-            specialNote: ''
+
+        const defaultOptions = {};
+        Object.keys(productOptions).forEach(optionType => {
+            if (optionType === 'topping') {
+                defaultOptions[optionType] = [];
+            } else if (productOptions[optionType]?.length > 0) {
+                const defaultValue = productOptions[optionType].find(opt =>
+                    opt.value === 'regular' || opt.value === 'tidak pedas' || opt.value === 'ayam'
+                )?.value || productOptions[optionType][0].value;
+                defaultOptions[optionType] = defaultValue;
+            }
         });
+        defaultOptions.specialNote = '';
+        setOptions(defaultOptions);
     };
 
     return (
@@ -78,136 +125,118 @@ const ProductOptionsModal = ({ product, category, isOpen, onClose, onAddToCart, 
                 </div>
 
                 <div style={styles.modalContent}>
-                    {/* Quantity */}
-                    <div style={styles.formGroup}>
-                        <label style={styles.label}>Jumlah</label>
-                        <div style={styles.quantityControl}>
-                            <button
-                                onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                                style={styles.quantityButton}
-                            >
-                                <Minus size={18} />
-                            </button>
-                            <span style={styles.quantityValue}>{quantity}</span>
-                            <button
-                                onClick={() => setQuantity(quantity + 1)}
-                                style={{ ...styles.quantityButton, ...styles.quantityButtonActive }}
-                            >
-                                <Plus size={18} />
-                            </button>
+                    {loading ? (
+                        <div style={{ textAlign: 'center', padding: '2rem' }}>
+                            <div style={{
+                                width: '40px',
+                                height: '40px',
+                                border: '3px solid #f3f4f6',
+                                borderTopColor: '#3b82f6',
+                                borderRadius: '50%',
+                                animation: 'spin 1s linear infinite',
+                                margin: '0 auto 1rem'
+                            }} />
+                            <p>Memuat opsi produk...</p>
                         </div>
-                    </div>
-
-                    {/* Opsi untuk Kebab */}
-                    {category === 'kebab' && (
+                    ) : (
                         <>
+                            {/* Quantity */}
                             <div style={styles.formGroup}>
-                                <label style={styles.label}>Tingkat Kepedasan</label>
-                                <div style={styles.optionsGrid}>
-                                    {spiceLevels.map(level => (
-                                        <button
-                                            key={level}
-                                            onClick={() => setOptions(prev => ({ ...prev, spiceLevel: level }))}
-                                            style={{
-                                                ...styles.optionButton,
-                                                ...(options.spiceLevel === level ? styles.optionButtonActive : styles.optionButtonInactive)
-                                            }}
-                                        >
-                                            {level}
-                                        </button>
-                                    ))}
+                                <label style={styles.label}>Jumlah</label>
+                                <div style={styles.quantityControl}>
+                                    <button
+                                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                                        style={styles.quantityButton}
+                                    >
+                                        <Minus size={18} />
+                                    </button>
+                                    <span style={styles.quantityValue}>{quantity}</span>
+                                    <button
+                                        onClick={() => setQuantity(quantity + 1)}
+                                        style={{ ...styles.quantityButton, ...styles.quantityButtonActive }}
+                                    >
+                                        <Plus size={18} />
+                                    </button>
                                 </div>
                             </div>
 
-                            <div style={styles.formGroup}>
-                                <label style={styles.label}>Tipe Daging</label>
-                                <div style={styles.optionsGrid}>
-                                    {meatTypes.map(meat => (
-                                        <button
-                                            key={meat}
-                                            onClick={() => setOptions(prev => ({ ...prev, meatType: meat }))}
-                                            style={{
-                                                ...styles.optionButton,
-                                                ...(options.meatType === meat ? styles.optionButtonActive : styles.optionButtonInactive)
-                                            }}
-                                        >
-                                            {meat}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
+                            {Object.keys(productOptions).map(optionType => {
+                                if (optionType === 'topping') {
+                                    return (
+                                        <div key={optionType} style={styles.formGroup}>
+                                            <label style={styles.label}>
+                                                Topping
+                                                {productOptions[optionType].some(opt => opt.additionalPrice > 0) &&
+                                                    ` (mulai dari +Rp ${Math.min(...productOptions[optionType].map(opt => opt.additionalPrice)).toLocaleString()})`
+                                                }
+                                            </label>
+                                            <div style={styles.optionsGridTwo}>
+                                                {productOptions[optionType].map(option => (
+                                                    <button
+                                                        key={option.value}
+                                                        onClick={() => handleToppingToggle(option.value)}
+                                                        style={{
+                                                            ...styles.optionButton,
+                                                            ...(options.topping?.includes(option.value) ? styles.optionButtonActive : styles.optionButtonInactive)
+                                                        }}
+                                                    >
+                                                        {option.value}
+                                                        {option.additionalPrice !== 0 && (
+                                                            <span style={{ fontSize: '0.8em', opacity: 0.8 }}>
+                                                                {option.additionalPrice > 0 ? ` +${option.additionalPrice.toLocaleString()}` : ` ${option.additionalPrice.toLocaleString()}`}
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                } else {
+                                    const optionLabels = {
+                                        spice_level: 'Tingkat Kepedasan',
+                                        meat_type: 'Tipe Daging',
+                                        size: 'Ukuran'
+                                    };
 
-                            <div style={styles.formGroup}>
-                                <label style={styles.label}>Ukuran</label>
-                                <div style={styles.optionsGrid}>
-                                    {sizes.map(size => (
-                                        <button
-                                            key={size}
-                                            onClick={() => setOptions(prev => ({ ...prev, size }))}
-                                            style={{
-                                                ...styles.optionButton,
-                                                ...(options.size === size ? styles.optionButtonActive : styles.optionButtonInactive)
-                                            }}
-                                        >
-                                            {size}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
+                                    return (
+                                        <div key={optionType} style={styles.formGroup}>
+                                            <label style={styles.label}>{optionLabels[optionType] || optionType}</label>
+                                            <div style={styles.optionsGrid}>
+                                                {productOptions[optionType].map(option => (
+                                                    <button
+                                                        key={option.value}
+                                                        onClick={() => setOptions(prev => ({ ...prev, [optionType]: option.value }))}
+                                                        style={{
+                                                            ...styles.optionButton,
+                                                            ...(options[optionType] === option.value ? styles.optionButtonActive : styles.optionButtonInactive)
+                                                        }}
+                                                    >
+                                                        {option.value}
+                                                        {option.additionalPrice !== 0 && (
+                                                            <span style={{ fontSize: '0.8em', opacity: 0.8 }}>
+                                                                {option.additionalPrice > 0 ? ` +${option.additionalPrice.toLocaleString()}` : ` ${option.additionalPrice.toLocaleString()}`}
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                            })}
 
+                            {/* Special Note */}
                             <div style={styles.formGroup}>
-                                <label style={styles.label}>Additional Topping (+Rp 5.000 each)</label>
-                                <div style={styles.optionsGridTwo}>
-                                    {kebabToppings.map(topping => (
-                                        <button
-                                            key={topping}
-                                            onClick={() => handleToppingToggle(topping)}
-                                            style={{
-                                                ...styles.optionButton,
-                                                ...(options.additionalToppings.includes(topping) ? styles.optionButtonActive : styles.optionButtonInactive)
-                                            }}
-                                        >
-                                            {topping}
-                                        </button>
-                                    ))}
-                                </div>
+                                <label style={styles.label}>Catatan Khusus</label>
+                                <textarea
+                                    value={options.specialNote || ''}
+                                    onChange={(e) => setOptions(prev => ({ ...prev, specialNote: e.target.value }))}
+                                    style={styles.textarea}
+                                    rows="3"
+                                    placeholder="Catatan khusus untuk produk ini..."
+                                />
                             </div>
                         </>
-                    )}
-
-                    {/* Opsi untuk Burger */}
-                    {category === 'burger' && (
-                        <div style={styles.formGroup}>
-                            <label style={styles.label}>Additional Topping (+Rp 5.000 each)</label>
-                            <div style={styles.optionsGridTwo}>
-                                {burgerToppings.map(topping => (
-                                    <button
-                                        key={topping}
-                                        onClick={() => handleToppingToggle(topping)}
-                                        style={{
-                                            ...styles.optionButton,
-                                            ...(options.additionalToppings.includes(topping) ? styles.optionButtonActive : styles.optionButtonInactive)
-                                        }}
-                                    >
-                                        {topping}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Special Note */}
-                    {(category === 'kebab' || category === 'burger') && (
-                        <div style={styles.formGroup}>
-                            <label style={styles.label}>Special Note</label>
-                            <textarea
-                                value={options.specialNote}
-                                onChange={(e) => setOptions(prev => ({ ...prev, specialNote: e.target.value }))}
-                                style={styles.textarea}
-                                rows="3"
-                                placeholder="Catatan khusus..."
-                            />
-                        </div>
                     )}
                 </div>
 

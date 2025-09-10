@@ -29,6 +29,7 @@ const productService = {
                     id: product.id,
                     name: product.name,
                     price: product.price,
+                    category_id: product.category_id,
                     category: categoryName
                 }
             });
@@ -163,7 +164,7 @@ const productService = {
         }
 
         try {
-            // Soft delete - set is_active to false
+
             const { error } = await supabase
                 .from('products')
                 .update({ is_active: false })
@@ -196,6 +197,73 @@ const productService = {
         } catch (error) {
             console.warn('Supabase error, falling back to mock categories:', error);
             return ['kebab', 'burger', 'alacarte'];
+        }
+    },
+
+    async getProductOptions(productId) {
+        if (!isSupabaseAvailable()) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    const mockOptions = {
+                        spice_level: ['tidak pedas', 'sedang', 'pedas'],
+                        meat_type: ['ayam', 'daging', 'mixed'],
+                        size: ['small', 'regular', 'jumbo'],
+                        topping: ['Keju', 'Extra Chicken', 'Extra Daging', 'Extra Lettuce', 'Extra Bombay', 'Extra Nanas']
+                    };
+                    resolve(mockOptions);
+                }, 200);
+            });
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('product_options')
+                .select('*')
+                .eq('product_category', productId)
+                .order('option_value', { ascending: false });
+
+            if (error) throw error;
+
+            const groupedOptions = {};
+            data.forEach(option => {
+                if (!groupedOptions[option.option_type]) {
+                    groupedOptions[option.option_type] = [];
+                }
+                groupedOptions[option.option_type].push({
+                    value: option.option_value,
+                    additionalPrice: option.additional_price || 0
+                });
+            });
+
+            return groupedOptions;
+        } catch (error) {
+            console.warn('Supabase error, falling back to mock options:', error);
+            // Return mock options as fallback
+            return {
+                spice_level: [
+                    { value: 'tidak pedas', additionalPrice: 0 },
+                    { value: 'sedang', additionalPrice: 0 },
+                    { value: 'pedas', additionalPrice: 0 }
+                ],
+                meat_type: [
+                    { value: 'ayam', additionalPrice: 0 },
+                    { value: 'daging', additionalPrice: 0 },
+                    { value: 'mixed', additionalPrice: 2000 }
+                ],
+                size: [
+                    { value: 'small', additionalPrice: -3000 },
+                    { value: 'regular', additionalPrice: 0 },
+                    { value: 'jumbo', additionalPrice: 5000 }
+                ],
+                topping: [
+                    { value: 'Keju', additionalPrice: 5000 },
+                    { value: 'Extra Chicken', additionalPrice: 8000 },
+                    { value: 'Extra Daging', additionalPrice: 10000 },
+                    { value: 'Extra Lettuce', additionalPrice: 2000 },
+                    { value: 'Extra Bombay', additionalPrice: 3000 },
+                    { value: 'Extra Nanas', additionalPrice: 3000 }
+                ]
+            };
         }
     }
 };

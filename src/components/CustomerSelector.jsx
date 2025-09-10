@@ -67,6 +67,16 @@ const CustomerSelector = ({ selectedCustomer, onCustomerSelect, customerService,
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 style={styles.customerButton}
+                onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)';
+                    e.currentTarget.style.borderColor = '#3b82f6';
+                }}
+                onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.borderColor = '#e5e5e5';
+                }}
             >
                 <span style={{ color: selectedCustomer ? '#111827' : '#6b7280' }}>
                     {selectedCustomer ? selectedCustomer.name : 'Pilih Customer'}

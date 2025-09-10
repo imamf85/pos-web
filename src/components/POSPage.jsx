@@ -231,6 +231,133 @@ const POSPage = ({ mockProducts, customerService }) => {
             justifyContent: 'center',
             fontSize: kebabTheme.typography.fontSize.xs,
             fontWeight: kebabTheme.typography.fontWeight.bold
+        },
+        // Customer Selector Styles
+        customerDropdown: {
+            position: 'relative',
+            marginBottom: kebabTheme.spacing.lg
+        },
+        customerButton: {
+            ...commonStyles.card,
+            width: '100%',
+            padding: kebabTheme.spacing.lg,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            cursor: 'pointer',
+            border: `2px solid ${kebabTheme.colors.bgSecondary}`,
+            background: kebabTheme.colors.white,
+            borderRadius: kebabTheme.borderRadius.lg,
+            transition: kebabTheme.transitions.base,
+            fontSize: kebabTheme.typography.fontSize.base,
+            fontWeight: kebabTheme.typography.fontWeight.medium
+        },
+        customerDropdownMenu: {
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            background: kebabTheme.colors.white,
+            border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+            borderRadius: kebabTheme.borderRadius.lg,
+            boxShadow: kebabTheme.shadows.xl,
+            zIndex: 1000,
+            marginTop: kebabTheme.spacing.xs
+        },
+        customerSearch: {
+            padding: kebabTheme.spacing.md,
+            borderBottom: `1px solid ${kebabTheme.colors.bgSecondary}`
+        },
+        customerSearchInput: {
+            width: '100%',
+            padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.lg} ${kebabTheme.spacing.sm} 2.5rem`,
+            border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+            borderRadius: kebabTheme.borderRadius.md,
+            fontSize: kebabTheme.typography.fontSize.sm,
+            outline: 'none'
+        },
+        customerItem: {
+            width: '100%',
+            padding: kebabTheme.spacing.md,
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            textAlign: 'left',
+            transition: kebabTheme.transitions.base,
+            borderRadius: kebabTheme.borderRadius.sm
+        },
+        // Modal Styles for CustomerSelector
+        modalOverlay: {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+        },
+        modal: {
+            backgroundColor: kebabTheme.colors.white,
+            borderRadius: kebabTheme.borderRadius.lg,
+            maxWidth: '500px',
+            width: '90%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            boxShadow: kebabTheme.shadows.xl
+        },
+        modalHeader: {
+            padding: kebabTheme.spacing.lg,
+            borderBottom: `1px solid ${kebabTheme.colors.bgSecondary}`
+        },
+        modalTitle: {
+            ...commonStyles.heading.h3,
+            margin: 0,
+            color: kebabTheme.colors.textPrimary
+        },
+        modalContent: {
+            padding: kebabTheme.spacing.lg
+        },
+        modalFooter: {
+            padding: kebabTheme.spacing.lg,
+            borderTop: `1px solid ${kebabTheme.colors.bgSecondary}`
+        },
+        label: {
+            display: 'block',
+            marginBottom: kebabTheme.spacing.sm,
+            fontSize: kebabTheme.typography.fontSize.sm,
+            fontWeight: kebabTheme.typography.fontWeight.semibold,
+            color: kebabTheme.colors.textPrimary
+        },
+        input: {
+            width: '100%',
+            padding: kebabTheme.spacing.md,
+            border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+            borderRadius: kebabTheme.borderRadius.md,
+            fontSize: kebabTheme.typography.fontSize.sm,
+            outline: 'none',
+            transition: kebabTheme.transitions.base
+        },
+        button: {
+            ...commonStyles.button.base
+        },
+        buttonPrimary: {
+            ...commonStyles.button.primary
+        },
+        buttonSecondary: {
+            ...commonStyles.button.base,
+            background: kebabTheme.colors.white,
+            color: kebabTheme.colors.textPrimary,
+            border: `1px solid ${kebabTheme.colors.bgSecondary}`
+        },
+        buttonDisabled: {
+            ...commonStyles.button.base,
+            background: kebabTheme.colors.bgSecondary,
+            color: kebabTheme.colors.textSecondary,
+            cursor: 'not-allowed',
+            opacity: 0.6
         }
     };
 
@@ -282,6 +409,36 @@ const POSPage = ({ mockProducts, customerService }) => {
         setShowPayment(true);
     };
 
+    const handleConfirmOrder = async () => {
+        try {
+            const orderData = {
+                customer_id: selectedCustomer.id,
+                customer_name: selectedCustomer.name,
+                items: cart,
+                total_amount: getTotalAmount(),
+                order_number: `ORD-${Date.now()}`,
+                status: 'pending'
+            };
+
+            // If orderService is available, save the order
+            if (orderService && typeof orderService.createOrder === 'function') {
+                await orderService.createOrder(orderData);
+            }
+
+            // Show success message
+            alert(`Pesanan berhasil dibuat!\nNomor Pesanan: ${orderData.order_number}\nCustomer: ${selectedCustomer.name}\nTotal: ${formatPrice(getTotalAmount())}`);
+
+            // Reset state
+            setCart([]);
+            setSelectedCustomer(null);
+            setShowPayment(false);
+            setOrderNumber(prev => prev + 1);
+        } catch (error) {
+            console.error('Error creating order:', error);
+            alert('Gagal membuat pesanan. Silakan coba lagi.');
+        }
+    };
+
     const filteredProducts = Array.isArray(products)
         ? products.filter(product => product.category === selectedCategory)
         : [];
@@ -289,6 +446,16 @@ const POSPage = ({ mockProducts, customerService }) => {
     return (
         <div style={posStyles.container}>
             <div style={posStyles.mainSection}>
+                {/* Mobile Customer Selector */}
+                {isMobile && (
+                    <CustomerSelector
+                        selectedCustomer={selectedCustomer}
+                        onCustomerSelect={setSelectedCustomer}
+                        customerService={customerService}
+                        styles={posStyles}
+                    />
+                )}
+
                 {/* Categories */}
                 <div style={posStyles.categoriesContainer}>
                     {categories.map(category => (
@@ -472,9 +639,317 @@ const POSPage = ({ mockProducts, customerService }) => {
             {selectedProduct && (
                 <ProductOptionsModal
                     product={selectedProduct}
+                    category={selectedProduct.category}
+                    isOpen={true}
                     onAddToCart={addToCart}
                     onClose={() => setSelectedProduct(null)}
+                    styles={{
+                        modalOverlay: {
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 1000
+                        },
+                        modal: {
+                            backgroundColor: kebabTheme.colors.white,
+                            borderRadius: kebabTheme.borderRadius.lg,
+                            maxWidth: '500px',
+                            width: '90%',
+                            maxHeight: '90vh',
+                            overflowY: 'auto',
+                            boxShadow: kebabTheme.shadows.xl
+                        },
+                        modalMobile: {
+                            width: '95%',
+                            maxHeight: '95vh'
+                        },
+                        modalHeader: {
+                            padding: kebabTheme.spacing.lg,
+                            borderBottom: `1px solid ${kebabTheme.colors.bgSecondary}`
+                        },
+                        modalTitle: {
+                            ...commonStyles.heading.h3,
+                            margin: 0,
+                            color: kebabTheme.colors.textPrimary
+                        },
+                        modalCloseButton: {
+                            background: 'none',
+                            border: 'none',
+                            fontSize: '24px',
+                            cursor: 'pointer',
+                            color: kebabTheme.colors.textSecondary,
+                            padding: kebabTheme.spacing.sm
+                        },
+                        modalContent: {
+                            padding: kebabTheme.spacing.lg
+                        },
+                        formGroup: {
+                            marginBottom: kebabTheme.spacing.lg
+                        },
+                        label: {
+                            display: 'block',
+                            marginBottom: kebabTheme.spacing.sm,
+                            fontSize: kebabTheme.typography.fontSize.sm,
+                            fontWeight: kebabTheme.typography.fontWeight.semibold,
+                            color: kebabTheme.colors.textPrimary
+                        },
+                        quantityControl: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: kebabTheme.spacing.md
+                        },
+                        quantityButton: {
+                            width: '40px',
+                            height: '40px',
+                            border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+                            borderRadius: kebabTheme.borderRadius.md,
+                            background: kebabTheme.colors.white,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: kebabTheme.colors.textPrimary
+                        },
+                        quantityButtonActive: {
+                            background: kebabTheme.colors.primary,
+                            borderColor: kebabTheme.colors.primary,
+                            color: kebabTheme.colors.white
+                        },
+                        quantityValue: {
+                            fontSize: kebabTheme.typography.fontSize.lg,
+                            fontWeight: kebabTheme.typography.fontWeight.semibold,
+                            minWidth: '40px',
+                            textAlign: 'center'
+                        },
+                        optionsGrid: {
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: kebabTheme.spacing.sm
+                        },
+                        optionsGridTwo: {
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(2, 1fr)',
+                            gap: kebabTheme.spacing.sm
+                        },
+                        optionButton: {
+                            padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}`,
+                            border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+                            borderRadius: kebabTheme.borderRadius.md,
+                            background: kebabTheme.colors.white,
+                            cursor: 'pointer',
+                            fontSize: kebabTheme.typography.fontSize.sm,
+                            transition: kebabTheme.transitions.base
+                        },
+                        optionButtonActive: {
+                            background: kebabTheme.colors.primary,
+                            borderColor: kebabTheme.colors.primary,
+                            color: kebabTheme.colors.white
+                        },
+                        optionButtonInactive: {
+                            background: kebabTheme.colors.white,
+                            borderColor: kebabTheme.colors.bgSecondary,
+                            color: kebabTheme.colors.textPrimary
+                        },
+                        textarea: {
+                            width: '100%',
+                            padding: kebabTheme.spacing.md,
+                            border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+                            borderRadius: kebabTheme.borderRadius.md,
+                            fontSize: kebabTheme.typography.fontSize.sm,
+                            resize: 'vertical',
+                            minHeight: '80px'
+                        },
+                        modalFooter: {
+                            padding: kebabTheme.spacing.lg,
+                            borderTop: `1px solid ${kebabTheme.colors.bgSecondary}`
+                        },
+                        totalPrice: {
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            fontSize: kebabTheme.typography.fontSize.lg,
+                            fontWeight: kebabTheme.typography.fontWeight.semibold
+                        },
+                        totalPriceValue: {
+                            color: kebabTheme.colors.primary,
+                            fontSize: kebabTheme.typography.fontSize.xl,
+                            fontWeight: kebabTheme.typography.fontWeight.bold
+                        },
+                        button: {
+                            ...commonStyles.button.base
+                        },
+                        buttonPrimary: {
+                            ...commonStyles.button.primary
+                        },
+                        flexRow: {
+                            display: 'flex'
+                        },
+                        justifyBetween: {
+                            justifyContent: 'space-between'
+                        },
+                        itemsCenter: {
+                            alignItems: 'center'
+                        }
+                    }}
                 />
+            )}
+
+            {/* Payment Confirmation Modal */}
+            {showPayment && (
+                <div style={posStyles.modalOverlay}>
+                    <div style={posStyles.modal}>
+                        <div style={posStyles.modalHeader}>
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                            }}>
+                                <h3 style={posStyles.modalTitle}>Konfirmasi Pesanan</h3>
+                                <button 
+                                    onClick={() => setShowPayment(false)} 
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        fontSize: '24px',
+                                        cursor: 'pointer',
+                                        color: kebabTheme.colors.textSecondary,
+                                        padding: kebabTheme.spacing.sm
+                                    }}
+                                >×</button>
+                            </div>
+                        </div>
+                        
+                        <div style={posStyles.modalContent}>
+                            {/* Customer Info */}
+                            <div style={{ marginBottom: kebabTheme.spacing.lg }}>
+                                <h4 style={{ 
+                                    margin: `0 0 ${kebabTheme.spacing.sm} 0`,
+                                    color: kebabTheme.colors.textPrimary,
+                                    fontSize: kebabTheme.typography.fontSize.base,
+                                    fontWeight: kebabTheme.typography.fontWeight.semibold
+                                }}>Customer</h4>
+                                <p style={{ 
+                                    margin: 0,
+                                    color: kebabTheme.colors.textSecondary,
+                                    fontSize: kebabTheme.typography.fontSize.sm
+                                }}>{selectedCustomer?.name}</p>
+                            </div>
+
+                            {/* Order Items */}
+                            <div style={{ marginBottom: kebabTheme.spacing.lg }}>
+                                <h4 style={{ 
+                                    margin: `0 0 ${kebabTheme.spacing.sm} 0`,
+                                    color: kebabTheme.colors.textPrimary,
+                                    fontSize: kebabTheme.typography.fontSize.base,
+                                    fontWeight: kebabTheme.typography.fontWeight.semibold
+                                }}>Detail Pesanan</h4>
+                                
+                                <div style={{ 
+                                    maxHeight: '200px',
+                                    overflowY: 'auto',
+                                    border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+                                    borderRadius: kebabTheme.borderRadius.md,
+                                    padding: kebabTheme.spacing.sm
+                                }}>
+                                    {cart.map((item, index) => (
+                                        <div key={`${item.id}-${index}`} style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'flex-start',
+                                            padding: kebabTheme.spacing.sm,
+                                            borderBottom: index < cart.length - 1 ? `1px solid ${kebabTheme.colors.bgSecondary}` : 'none'
+                                        }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ 
+                                                    fontSize: kebabTheme.typography.fontSize.sm,
+                                                    fontWeight: kebabTheme.typography.fontWeight.medium,
+                                                    color: kebabTheme.colors.textPrimary
+                                                }}>{item.name} x {item.quantity}</div>
+                                                {item.options && Object.keys(item.options).length > 0 && (
+                                                    <div style={{ 
+                                                        fontSize: kebabTheme.typography.fontSize.xs,
+                                                        color: kebabTheme.colors.textSecondary,
+                                                        marginTop: '2px'
+                                                    }}>
+                                                        {Object.entries(item.options)
+                                                            .filter(([key, value]) => key !== 'specialNote' && value && 
+                                                                (Array.isArray(value) ? value.length > 0 : true))
+                                                            .map(([key, value]) => 
+                                                                Array.isArray(value) ? value.join(', ') : value
+                                                            ).join(' • ')}
+                                                        {item.options.specialNote && (
+                                                            <div>Note: {item.options.specialNote}</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div style={{ 
+                                                fontSize: kebabTheme.typography.fontSize.sm,
+                                                fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                                color: kebabTheme.colors.primary
+                                            }}>{formatPrice(item.price)}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Total */}
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: kebabTheme.spacing.md,
+                                background: kebabTheme.colors.bgSecondary,
+                                borderRadius: kebabTheme.borderRadius.md,
+                                marginBottom: kebabTheme.spacing.lg
+                            }}>
+                                <span style={{
+                                    fontSize: kebabTheme.typography.fontSize.lg,
+                                    fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                    color: kebabTheme.colors.textPrimary
+                                }}>Total Pesanan</span>
+                                <span style={{
+                                    fontSize: kebabTheme.typography.fontSize.xl,
+                                    fontWeight: kebabTheme.typography.fontWeight.bold,
+                                    color: kebabTheme.colors.primary
+                                }}>{formatPrice(getTotalAmount())}</span>
+                            </div>
+                        </div>
+
+                        <div style={posStyles.modalFooter}>
+                            <div style={{ display: 'flex', gap: kebabTheme.spacing.md }}>
+                                <button
+                                    onClick={() => setShowPayment(false)}
+                                    style={{
+                                        ...posStyles.button,
+                                        ...posStyles.buttonSecondary,
+                                        flex: 1,
+                                        padding: kebabTheme.spacing.md
+                                    }}
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    onClick={handleConfirmOrder}
+                                    style={{
+                                        ...posStyles.button,
+                                        ...posStyles.buttonPrimary,
+                                        flex: 1,
+                                        padding: kebabTheme.spacing.md
+                                    }}
+                                >
+                                    Konfirmasi Pesanan
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
 
             <style>{`
