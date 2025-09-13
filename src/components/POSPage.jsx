@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Minus, X, Check } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, X, Check, Printer } from 'lucide-react';
 import CustomerSelector from './CustomerSelector';
 import ProductOptionsModal from './ProductOptionsModal';
 import useResponsive from '../hooks/useResponsive';
 import productService from '../services/productService';
 import orderService from '../services/orderService';
+import bluetoothPrinter from '../services/bluetoothPrinter';
+import receiptFormatter from '../services/receiptFormatter';
 import { kebabTheme, commonStyles } from '../styles/kebabTheme';
 import { useAuth } from '../contexts/FirebaseAuthContext';
 
@@ -25,6 +27,8 @@ const POSPage = ({ mockProducts, customerService }) => {
     const [loading, setLoading] = useState(false);
     const [unpaidOrders, setUnpaidOrders] = useState([]);
     const [showUnpaidOrders, setShowUnpaidOrders] = useState(false);
+    const [printerConnected, setPrinterConnected] = useState(false);
+    const [connectingPrinter, setConnectingPrinter] = useState(false);
 
     const categories = [
         { id: 'kebab', label: 'Kebab', emoji: '🥙' },
@@ -36,25 +40,33 @@ const POSPage = ({ mockProducts, customerService }) => {
         container: {
             display: 'flex',
             height: 'calc(100vh - 160px)',
-            gap: kebabTheme.spacing.xl,
-            maxWidth: '1400px',
-            margin: '0 auto'
+            gap: isMobile ? 0 : kebabTheme.spacing.xl,
+            maxWidth: isMobile ? '100%' : '1400px',
+            margin: '0 auto',
+            padding: isMobile ? '0' : `0 ${kebabTheme.spacing.xl}`,
+            width: '100%',
+            boxSizing: 'border-box'
         },
         mainSection: {
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            gap: kebabTheme.spacing.lg
+            gap: isMobile ? kebabTheme.spacing.md : kebabTheme.spacing.lg,
+            width: '100%',
+            minWidth: 0, // Prevent flex children from overflowing
+            padding: isMobile ? `0 ${kebabTheme.spacing.md}` : '0'
         },
         categoriesContainer: {
             ...commonStyles.card,
-            padding: kebabTheme.spacing.lg,
+            padding: isMobile ? kebabTheme.spacing.md : kebabTheme.spacing.lg,
             display: 'flex',
-            gap: kebabTheme.spacing.md
+            gap: isMobile ? kebabTheme.spacing.sm : kebabTheme.spacing.md,
+            width: '100%',
+            boxSizing: 'border-box'
         },
         categoryButton: {
             flex: 1,
-            padding: `${kebabTheme.spacing.md} ${kebabTheme.spacing.lg}`,
+            padding: isMobile ? `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}` : `${kebabTheme.spacing.md} ${kebabTheme.spacing.lg}`,
             borderRadius: kebabTheme.borderRadius.lg,
             border: `2px solid ${kebabTheme.colors.bgSecondary}`,
             background: kebabTheme.colors.white,
@@ -64,8 +76,9 @@ const POSPage = ({ mockProducts, customerService }) => {
             alignItems: 'center',
             justifyContent: 'center',
             gap: kebabTheme.spacing.sm,
-            fontSize: kebabTheme.typography.fontSize.base,
-            fontWeight: kebabTheme.typography.fontWeight.semibold
+            fontSize: isMobile ? kebabTheme.typography.fontSize.sm : kebabTheme.typography.fontSize.base,
+            fontWeight: kebabTheme.typography.fontWeight.semibold,
+            minWidth: 0 // Prevent overflow on small screens
         },
         categoryActive: {
             background: kebabTheme.colors.gradientPrimary,
@@ -75,8 +88,10 @@ const POSPage = ({ mockProducts, customerService }) => {
         productsGrid: {
             ...commonStyles.card,
             flex: 1,
-            padding: kebabTheme.spacing.lg,
-            overflowY: 'auto'
+            padding: isMobile ? kebabTheme.spacing.md : kebabTheme.spacing.lg,
+            overflowY: 'auto',
+            width: '100%',
+            boxSizing: 'border-box'
         },
         productGrid: {
             display: 'grid',
@@ -501,14 +516,57 @@ const POSPage = ({ mockProducts, customerService }) => {
         setShowPaymentMethod(false);
 
         if (method === 'unpaid') {
-            handleConfirmOrder(method);
+            // Show print options for unpaid orders
+            if (printerConnected) {
+                const printChoice = window.confirm('Apakah Anda ingin mencetak struk untuk pesanan belum bayar?\n\nOK = Ya, cetak struk\nCancel = Tidak, lanjutkan tanpa cetak');
+                if (printChoice) {
+                    const printType = window.confirm('Pilih jenis struk:\n\nOK = Struk Dapur\nCancel = Struk Customer') ? 'kitchen' : 'customer';
+                    handleConfirmOrder(method, true, printType);
+                } else {
+                    handleConfirmOrder(method);
+                }
+            } else {
+                handleConfirmOrder(method);
+            }
         } else {
             setShowPayment(true);
             setCashAmount('');
         }
     };
 
-    const handleConfirmOrder = async (paymentMethod = null) => {
+    const handlePrintReceipt = async (type = 'customer') => {
+        if (!printerConnected) {
+            alert('Printer belum terhubung. Silakan hubungkan printer terlebih dahulu.');
+            return;
+        }
+
+        try {
+            const orderData = {
+                id: orderNumber,
+                order_number: `ORD-${orderNumber}`,
+                customer_name: selectedCustomer?.name || 'Walk-in',
+                total_amount: getTotalAmount(),
+                cashier: userProfile?.name || 'Admin'
+            };
+
+            let receiptText;
+            if (type === 'kitchen') {
+                receiptText = receiptFormatter.generateKitchenReceipt(orderData, cart);
+            } else {
+                const paymentMethod = selectedPaymentMethod || 'unpaid';
+                const cashAmount = paymentMethod === 'cash' ? parseFloat(cashAmount) : 0;
+                receiptText = receiptFormatter.generateCustomerReceipt(orderData, cart, paymentMethod, cashAmount);
+            }
+
+            await bluetoothPrinter.print(receiptText);
+            alert(`Struk ${type === 'kitchen' ? 'dapur' : 'customer'} berhasil dicetak!`);
+        } catch (error) {
+            console.error('Error printing receipt:', error);
+            alert('Gagal mencetak struk: ' + error.message);
+        }
+    };
+
+    const handleConfirmOrder = async (paymentMethod = null, printAfterConfirm = false, printType = 'customer') => {
         try {
             const totalAmount = getTotalAmount();
 
@@ -582,6 +640,31 @@ const POSPage = ({ mockProducts, customerService }) => {
                 }
 
                 alert(successMessage);
+
+                // Print receipt if requested
+                if (printAfterConfirm && printerConnected) {
+                    try {
+                        const printOrderData = {
+                            ...savedOrder,
+                            order_number: orderNumber,
+                            customer_name: selectedCustomer.name,
+                            cashier: userProfile?.name || 'Admin'
+                        };
+
+                        let receiptText;
+                        if (printType === 'kitchen') {
+                            receiptText = receiptFormatter.generateKitchenReceipt(printOrderData, cart);
+                        } else {
+                            const cashAmt = currentPaymentMethod === 'cash' ? parseFloat(cashAmount) : 0;
+                            receiptText = receiptFormatter.generateCustomerReceipt(printOrderData, cart, currentPaymentMethod, cashAmt);
+                        }
+
+                        await bluetoothPrinter.print(receiptText);
+                    } catch (printError) {
+                        console.error('Error printing receipt:', printError);
+                        // Don't block the order process if printing fails
+                    }
+                }
 
                 // Reset all states
                 setCart([]);
@@ -1369,6 +1452,88 @@ const POSPage = ({ mockProducts, customerService }) => {
                                     </div>
                                 </button>
                             </div>
+
+                            {/* Printer Section */}
+                            <div style={{
+                                marginTop: kebabTheme.spacing.xl,
+                                padding: kebabTheme.spacing.lg,
+                                background: kebabTheme.colors.bgSecondary,
+                                borderRadius: kebabTheme.borderRadius.md
+                            }}>
+                                <h4 style={{
+                                    margin: `0 0 ${kebabTheme.spacing.md} 0`,
+                                    fontSize: kebabTheme.typography.fontSize.base,
+                                    fontWeight: kebabTheme.typography.fontWeight.semibold,
+                                    color: kebabTheme.colors.textPrimary,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: kebabTheme.spacing.sm
+                                }}>
+                                    <Printer size={18} />
+                                    Printer Bluetooth
+                                </h4>
+                                
+                                {!printerConnected ? (
+                                    <button
+                                        onClick={async () => {
+                                            setConnectingPrinter(true);
+                                            try {
+                                                await bluetoothPrinter.connect();
+                                                setPrinterConnected(true);
+                                                alert('Printer berhasil terhubung!');
+                                            } catch (error) {
+                                                alert('Gagal menghubungkan printer: ' + error.message);
+                                            } finally {
+                                                setConnectingPrinter(false);
+                                            }
+                                        }}
+                                        disabled={connectingPrinter}
+                                        style={{
+                                            ...posStyles.button,
+                                            ...posStyles.buttonSecondary,
+                                            width: '100%',
+                                            padding: kebabTheme.spacing.md,
+                                            opacity: connectingPrinter ? 0.6 : 1,
+                                            cursor: connectingPrinter ? 'not-allowed' : 'pointer'
+                                        }}
+                                    >
+                                        {connectingPrinter ? 'Menghubungkan...' : 'Hubungkan Printer'}
+                                    </button>
+                                ) : (
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: kebabTheme.spacing.sm,
+                                        alignItems: 'center'
+                                    }}>
+                                        <div style={{
+                                            flex: 1,
+                                            padding: kebabTheme.spacing.sm,
+                                            background: `${kebabTheme.colors.success}20`,
+                                            borderRadius: kebabTheme.borderRadius.md,
+                                            color: kebabTheme.colors.success,
+                                            fontSize: kebabTheme.typography.fontSize.sm,
+                                            textAlign: 'center'
+                                        }}>
+                                            ✓ Printer Terhubung
+                                        </div>
+                                        <button
+                                            onClick={async () => {
+                                                await bluetoothPrinter.disconnect();
+                                                setPrinterConnected(false);
+                                            }}
+                                            style={{
+                                                ...posStyles.button,
+                                                padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}`,
+                                                fontSize: kebabTheme.typography.fontSize.sm,
+                                                background: kebabTheme.colors.error,
+                                                color: kebabTheme.colors.white
+                                            }}
+                                        >
+                                            Putuskan
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1564,66 +1729,140 @@ const POSPage = ({ mockProducts, customerService }) => {
 
                         <div style={posStyles.modalFooter}>
                             {selectedPaymentMethod === 'cash' ? (
-                                <div style={{ display: 'flex', gap: kebabTheme.spacing.md }}>
-                                    <button
-                                        onClick={() => {
-                                            setShowPayment(false);
-                                            setSelectedPaymentMethod(null);
-                                            setCashAmount('');
-                                        }}
-                                        style={{
-                                            ...posStyles.button,
-                                            ...posStyles.buttonSecondary,
-                                            flex: 1,
-                                            padding: kebabTheme.spacing.md
-                                        }}
-                                    >
-                                        Batal
-                                    </button>
-                                    <button
-                                        onClick={handleConfirmOrder}
-                                        disabled={!cashAmount || isNaN(parseFloat(cashAmount)) || parseFloat(cashAmount) < getTotalAmount()}
-                                        style={{
-                                            ...posStyles.button,
-                                            ...((!cashAmount || isNaN(parseFloat(cashAmount)) || parseFloat(cashAmount) < getTotalAmount())
-                                                ? posStyles.buttonDisabled
-                                                : posStyles.buttonPrimary),
-                                            flex: 1,
-                                            padding: kebabTheme.spacing.md
-                                        }}
-                                    >
-                                        Konfirmasi Pembayaran
-                                    </button>
-                                </div>
+                                <>
+                                    <div style={{ display: 'flex', gap: kebabTheme.spacing.md }}>
+                                        <button
+                                            onClick={() => {
+                                                setShowPayment(false);
+                                                setSelectedPaymentMethod(null);
+                                                setCashAmount('');
+                                            }}
+                                            style={{
+                                                ...posStyles.button,
+                                                ...posStyles.buttonSecondary,
+                                                flex: 1,
+                                                padding: kebabTheme.spacing.md
+                                            }}
+                                        >
+                                            Batal
+                                        </button>
+                                        <button
+                                            onClick={handleConfirmOrder}
+                                            disabled={!cashAmount || isNaN(parseFloat(cashAmount)) || parseFloat(cashAmount) < getTotalAmount()}
+                                            style={{
+                                                ...posStyles.button,
+                                                ...((!cashAmount || isNaN(parseFloat(cashAmount)) || parseFloat(cashAmount) < getTotalAmount())
+                                                    ? posStyles.buttonDisabled
+                                                    : posStyles.buttonPrimary),
+                                                flex: 1,
+                                                padding: kebabTheme.spacing.md
+                                            }}
+                                        >
+                                            Konfirmasi Pembayaran
+                                        </button>
+                                    </div>
+                                    {printerConnected && cashAmount && !isNaN(parseFloat(cashAmount)) && parseFloat(cashAmount) >= getTotalAmount() && (
+                                        <div style={{ marginTop: kebabTheme.spacing.md }}>
+                                            <div style={{ marginBottom: kebabTheme.spacing.sm, fontSize: kebabTheme.typography.fontSize.sm, color: kebabTheme.colors.textSecondary }}>
+                                                Print Struk:
+                                            </div>
+                                            <div style={{ display: 'flex', gap: kebabTheme.spacing.sm }}>
+                                                <button
+                                                    onClick={() => handleConfirmOrder(null, true, 'kitchen')}
+                                                    style={{
+                                                        ...posStyles.button,
+                                                        ...posStyles.buttonSecondary,
+                                                        flex: 1,
+                                                        padding: kebabTheme.spacing.sm,
+                                                        fontSize: kebabTheme.typography.fontSize.sm
+                                                    }}
+                                                >
+                                                    <Printer size={16} style={{ marginRight: kebabTheme.spacing.xs }} />
+                                                    Dapur
+                                                </button>
+                                                <button
+                                                    onClick={() => handleConfirmOrder(null, true, 'customer')}
+                                                    style={{
+                                                        ...posStyles.button,
+                                                        ...posStyles.buttonSecondary,
+                                                        flex: 1,
+                                                        padding: kebabTheme.spacing.sm,
+                                                        fontSize: kebabTheme.typography.fontSize.sm
+                                                    }}
+                                                >
+                                                    <Printer size={16} style={{ marginRight: kebabTheme.spacing.xs }} />
+                                                    Customer
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                             ) : (
                                 // QRIS Payment Buttons
-                                <div style={{ display: 'flex', gap: kebabTheme.spacing.md }}>
-                                    <button
-                                        onClick={() => {
-                                            setShowPayment(false);
-                                            setSelectedPaymentMethod(null);
-                                        }}
-                                        style={{
-                                            ...posStyles.button,
-                                            ...posStyles.buttonSecondary,
-                                            flex: 1,
-                                            padding: kebabTheme.spacing.md
-                                        }}
-                                    >
-                                        Belum Bayar
-                                    </button>
-                                    <button
-                                        onClick={handleConfirmOrder}
-                                        style={{
-                                            ...posStyles.button,
-                                            ...posStyles.buttonPrimary,
-                                            flex: 1,
-                                            padding: kebabTheme.spacing.md
-                                        }}
-                                    >
-                                        Sudah Bayar
-                                    </button>
-                                </div>
+                                <>
+                                    <div style={{ display: 'flex', gap: kebabTheme.spacing.md }}>
+                                        <button
+                                            onClick={() => {
+                                                setShowPayment(false);
+                                                setSelectedPaymentMethod(null);
+                                            }}
+                                            style={{
+                                                ...posStyles.button,
+                                                ...posStyles.buttonSecondary,
+                                                flex: 1,
+                                                padding: kebabTheme.spacing.md
+                                            }}
+                                        >
+                                            Belum Bayar
+                                        </button>
+                                        <button
+                                            onClick={handleConfirmOrder}
+                                            style={{
+                                                ...posStyles.button,
+                                                ...posStyles.buttonPrimary,
+                                                flex: 1,
+                                                padding: kebabTheme.spacing.md
+                                            }}
+                                        >
+                                            Sudah Bayar
+                                        </button>
+                                    </div>
+                                    {printerConnected && (
+                                        <div style={{ marginTop: kebabTheme.spacing.md }}>
+                                            <div style={{ marginBottom: kebabTheme.spacing.sm, fontSize: kebabTheme.typography.fontSize.sm, color: kebabTheme.colors.textSecondary }}>
+                                                Print Struk:
+                                            </div>
+                                            <div style={{ display: 'flex', gap: kebabTheme.spacing.sm }}>
+                                                <button
+                                                    onClick={() => handleConfirmOrder(null, true, 'kitchen')}
+                                                    style={{
+                                                        ...posStyles.button,
+                                                        ...posStyles.buttonSecondary,
+                                                        flex: 1,
+                                                        padding: kebabTheme.spacing.sm,
+                                                        fontSize: kebabTheme.typography.fontSize.sm
+                                                    }}
+                                                >
+                                                    <Printer size={16} style={{ marginRight: kebabTheme.spacing.xs }} />
+                                                    Dapur
+                                                </button>
+                                                <button
+                                                    onClick={() => handleConfirmOrder(null, true, 'customer')}
+                                                    style={{
+                                                        ...posStyles.button,
+                                                        ...posStyles.buttonSecondary,
+                                                        flex: 1,
+                                                        padding: kebabTheme.spacing.sm,
+                                                        fontSize: kebabTheme.typography.fontSize.sm
+                                                    }}
+                                                >
+                                                    <Printer size={16} style={{ marginRight: kebabTheme.spacing.xs }} />
+                                                    Customer
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>
