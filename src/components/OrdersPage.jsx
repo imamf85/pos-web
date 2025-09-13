@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import { ShoppingCart, Search, Filter, DollarSign, Clock, CheckCircle, XCircle } from 'lucide-react';
 import orderService from '../services/orderService';
 import { kebabTheme, commonStyles } from '../styles/kebabTheme';
@@ -17,6 +17,8 @@ const OrdersPage = () => {
     const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
     const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
     const [cashAmount, setCashAmount] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage] = useState(10);
 
     const ordersStyles = {
         container: {
@@ -234,6 +236,11 @@ const OrdersPage = () => {
         loadOrders();
     }, []);
 
+    // Reset to first page when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filter, searchTerm, dateFilter]);
+
     const loadOrders = async () => {
         setLoading(true);
         try {
@@ -330,6 +337,12 @@ const OrdersPage = () => {
             !order.customers?.name?.toLowerCase().includes(searchTerm.toLowerCase())) return false;
         return true;
     });
+
+    // Calculate pagination
+    const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
 
     const stats = {
         total: filteredOrders.length,
@@ -510,7 +523,7 @@ const OrdersPage = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredOrders.map(order => (
+                                paginatedOrders.map(order => (
                                     <tr key={order.id}>
                                         <td style={ordersStyles.td}>
                                             <strong>{order.order_number || `ORD-${order.id}`}</strong>
@@ -568,6 +581,107 @@ const OrdersPage = () => {
                         </tbody>
                     </table>
                 </div>
+                
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: kebabTheme.spacing.lg,
+                        borderTop: `1px solid ${kebabTheme.colors.bgSecondary}`
+                    }}>
+                        <div style={{
+                            fontSize: kebabTheme.typography.fontSize.sm,
+                            color: kebabTheme.colors.textSecondary
+                        }}>
+                            Menampilkan {startIndex + 1} - {Math.min(endIndex, filteredOrders.length)} dari {filteredOrders.length} pesanan
+                        </div>
+                        
+                        <div style={{
+                            display: 'flex',
+                            gap: kebabTheme.spacing.sm
+                        }}>
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={currentPage === 1}
+                                style={{
+                                    padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}`,
+                                    border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+                                    borderRadius: kebabTheme.borderRadius.md,
+                                    background: currentPage === 1 ? kebabTheme.colors.bgSecondary : kebabTheme.colors.white,
+                                    color: currentPage === 1 ? kebabTheme.colors.textSecondary : kebabTheme.colors.textPrimary,
+                                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                    transition: kebabTheme.transitions.base,
+                                    fontSize: kebabTheme.typography.fontSize.sm
+                                }}
+                            >
+                                Sebelumnya
+                            </button>
+                            
+                            {/* Page Numbers */}
+                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                .filter(page => {
+                                    if (totalPages <= 7) return true;
+                                    if (page === 1 || page === totalPages) return true;
+                                    if (Math.abs(page - currentPage) <= 1) return true;
+                                    if (currentPage <= 3 && page <= 5) return true;
+                                    if (currentPage >= totalPages - 2 && page >= totalPages - 4) return true;
+                                    return false;
+                                })
+                                .map((page, index, array) => {
+                                    const prevPage = array[index - 1];
+                                    const showEllipsis = prevPage && page - prevPage > 1;
+                                    
+                                    return (
+                                        <Fragment key={page}>
+                                            {showEllipsis && (
+                                                <span style={{
+                                                    padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.xs}`,
+                                                    color: kebabTheme.colors.textSecondary
+                                                }}>...</span>
+                                            )}
+                                            <button
+                                                onClick={() => setCurrentPage(page)}
+                                                style={{
+                                                    padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}`,
+                                                    minWidth: '40px',
+                                                    border: `1px solid ${page === currentPage ? kebabTheme.colors.primary : kebabTheme.colors.bgSecondary}`,
+                                                    borderRadius: kebabTheme.borderRadius.md,
+                                                    background: page === currentPage ? kebabTheme.colors.primary : kebabTheme.colors.white,
+                                                    color: page === currentPage ? kebabTheme.colors.white : kebabTheme.colors.textPrimary,
+                                                    cursor: 'pointer',
+                                                    transition: kebabTheme.transitions.base,
+                                                    fontSize: kebabTheme.typography.fontSize.sm,
+                                                    fontWeight: page === currentPage ? kebabTheme.typography.fontWeight.semibold : kebabTheme.typography.fontWeight.normal
+                                                }}
+                                            >
+                                                {page}
+                                            </button>
+                                        </Fragment>
+                                    );
+                                })
+                            }
+                            
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={currentPage === totalPages}
+                                style={{
+                                    padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}`,
+                                    border: `1px solid ${kebabTheme.colors.bgSecondary}`,
+                                    borderRadius: kebabTheme.borderRadius.md,
+                                    background: currentPage === totalPages ? kebabTheme.colors.bgSecondary : kebabTheme.colors.white,
+                                    color: currentPage === totalPages ? kebabTheme.colors.textSecondary : kebabTheme.colors.textPrimary,
+                                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                    transition: kebabTheme.transitions.base,
+                                    fontSize: kebabTheme.typography.fontSize.sm
+                                }}
+                            >
+                                Berikutnya
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <style>{`
