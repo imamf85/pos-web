@@ -29,6 +29,8 @@ const POSPage = ({ mockProducts, customerService }) => {
     const [showUnpaidOrders, setShowUnpaidOrders] = useState(false);
     const [printerConnected, setPrinterConnected] = useState(false);
     const [connectingPrinter, setConnectingPrinter] = useState(false);
+    const [printerDeviceName, setPrinterDeviceName] = useState('');
+    const [isAutoReconnecting, setIsAutoReconnecting] = useState(false);
 
     const categories = [
         { id: 'kebab', label: 'Kebab', emoji: '🥙' },
@@ -451,7 +453,25 @@ const POSPage = ({ mockProducts, customerService }) => {
     useEffect(() => {
         loadProducts();
         loadUnpaidOrders();
+        checkPrinterStatus();
+        
+        // Check printer status periodically
+        const printerInterval = setInterval(checkPrinterStatus, 2000);
+        
+        return () => clearInterval(printerInterval);
     }, []);
+
+    // Check printer connection status
+    const checkPrinterStatus = () => {
+        try {
+            const connectionInfo = bluetoothPrinter.getConnectionInfo();
+            setPrinterConnected(connectionInfo.isConnected);
+            setPrinterDeviceName(connectionInfo.deviceName);
+            setIsAutoReconnecting(connectionInfo.reconnectAttempts > 0 && connectionInfo.reconnectAttempts < connectionInfo.maxReconnectAttempts);
+        } catch (error) {
+            console.error('Error checking printer status:', error);
+        }
+    };
 
     const loadProducts = async () => {
         setLoading(true);
@@ -1474,63 +1494,126 @@ const POSPage = ({ mockProducts, customerService }) => {
                                 </h4>
                                 
                                 {!printerConnected ? (
-                                    <button
-                                        onClick={async () => {
-                                            setConnectingPrinter(true);
-                                            try {
-                                                await bluetoothPrinter.connect();
-                                                setPrinterConnected(true);
-                                                alert('Printer berhasil terhubung!');
-                                            } catch (error) {
-                                                alert('Gagal menghubungkan printer: ' + error.message);
-                                            } finally {
-                                                setConnectingPrinter(false);
-                                            }
-                                        }}
-                                        disabled={connectingPrinter}
-                                        style={{
-                                            ...posStyles.button,
-                                            ...posStyles.buttonSecondary,
-                                            width: '100%',
-                                            padding: kebabTheme.spacing.md,
-                                            opacity: connectingPrinter ? 0.6 : 1,
-                                            cursor: connectingPrinter ? 'not-allowed' : 'pointer'
-                                        }}
-                                    >
-                                        {connectingPrinter ? 'Menghubungkan...' : 'Hubungkan Printer'}
-                                    </button>
+                                    <div>
+                                        {isAutoReconnecting && (
+                                            <div style={{
+                                                padding: kebabTheme.spacing.sm,
+                                                background: `${kebabTheme.colors.warning}20`,
+                                                borderRadius: kebabTheme.borderRadius.md,
+                                                color: kebabTheme.colors.warning,
+                                                fontSize: kebabTheme.typography.fontSize.sm,
+                                                textAlign: 'center',
+                                                marginBottom: kebabTheme.spacing.sm,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: kebabTheme.spacing.sm
+                                            }}>
+                                                <div style={{
+                                                    width: '16px',
+                                                    height: '16px',
+                                                    border: `2px solid ${kebabTheme.colors.warning}`,
+                                                    borderTopColor: 'transparent',
+                                                    borderRadius: '50%',
+                                                    animation: 'spin 1s linear infinite'
+                                                }} />
+                                                Menghubungkan ulang ke {printerDeviceName}...
+                                            </div>
+                                        )}
+                                        <button
+                                            onClick={async () => {
+                                                setConnectingPrinter(true);
+                                                try {
+                                                    await bluetoothPrinter.connect();
+                                                    checkPrinterStatus();
+                                                    alert('Printer berhasil terhubung dan akan otomatis terhubung di session selanjutnya!');
+                                                } catch (error) {
+                                                    alert('Gagal menghubungkan printer: ' + error.message);
+                                                } finally {
+                                                    setConnectingPrinter(false);
+                                                }
+                                            }}
+                                            disabled={connectingPrinter || isAutoReconnecting}
+                                            style={{
+                                                ...posStyles.button,
+                                                ...posStyles.buttonSecondary,
+                                                width: '100%',
+                                                padding: kebabTheme.spacing.md,
+                                                opacity: (connectingPrinter || isAutoReconnecting) ? 0.6 : 1,
+                                                cursor: (connectingPrinter || isAutoReconnecting) ? 'not-allowed' : 'pointer'
+                                            }}
+                                        >
+                                            {connectingPrinter ? 'Menghubungkan...' : 
+                                             isAutoReconnecting ? 'Menghubungkan Ulang...' :
+                                             bluetoothPrinter.getSavedDeviceInfo() ? `Hubungkan ke ${printerDeviceName}` : 'Hubungkan Printer'}
+                                        </button>
+                                    </div>
                                 ) : (
                                     <div style={{
                                         display: 'flex',
-                                        gap: kebabTheme.spacing.sm,
-                                        alignItems: 'center'
+                                        flexDirection: 'column',
+                                        gap: kebabTheme.spacing.sm
                                     }}>
                                         <div style={{
-                                            flex: 1,
                                             padding: kebabTheme.spacing.sm,
                                             background: `${kebabTheme.colors.success}20`,
                                             borderRadius: kebabTheme.borderRadius.md,
                                             color: kebabTheme.colors.success,
                                             fontSize: kebabTheme.typography.fontSize.sm,
-                                            textAlign: 'center'
+                                            textAlign: 'center',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: kebabTheme.spacing.sm
                                         }}>
-                                            ✓ Printer Terhubung
+                                            <span>✓</span>
+                                            <div>
+                                                <div>Printer Terhubung</div>
+                                                <div style={{ 
+                                                    fontSize: kebabTheme.typography.fontSize.xs,
+                                                    opacity: 0.8 
+                                                }}>{printerDeviceName}</div>
+                                            </div>
                                         </div>
-                                        <button
-                                            onClick={async () => {
-                                                await bluetoothPrinter.disconnect();
-                                                setPrinterConnected(false);
-                                            }}
-                                            style={{
-                                                ...posStyles.button,
-                                                padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}`,
-                                                fontSize: kebabTheme.typography.fontSize.sm,
-                                                background: kebabTheme.colors.error,
-                                                color: kebabTheme.colors.white
-                                            }}
-                                        >
-                                            Putuskan
-                                        </button>
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: kebabTheme.spacing.sm
+                                        }}>
+                                            <button
+                                                onClick={async () => {
+                                                    // Soft disconnect - keeps memory
+                                                    await bluetoothPrinter.softDisconnect();
+                                                    checkPrinterStatus();
+                                                }}
+                                                style={{
+                                                    ...posStyles.button,
+                                                    ...posStyles.buttonSecondary,
+                                                    flex: 1,
+                                                    padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}`,
+                                                    fontSize: kebabTheme.typography.fontSize.sm
+                                                }}
+                                            >
+                                                Putus Sementara
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    if (window.confirm('Yakin ingin memutus koneksi dan menghapus memori printer? Anda perlu menghubungkan ulang secara manual.')) {
+                                                        await bluetoothPrinter.disconnect();
+                                                        checkPrinterStatus();
+                                                        setPrinterDeviceName('');
+                                                    }
+                                                }}
+                                                style={{
+                                                    ...posStyles.button,
+                                                    padding: `${kebabTheme.spacing.sm} ${kebabTheme.spacing.md}`,
+                                                    fontSize: kebabTheme.typography.fontSize.sm,
+                                                    background: kebabTheme.colors.error,
+                                                    color: kebabTheme.colors.white
+                                                }}
+                                            >
+                                                Hapus
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
