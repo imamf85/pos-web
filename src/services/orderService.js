@@ -1,7 +1,6 @@
 // Fixed orderService.js with proper error handling and data validation
 import { supabase, supabaseService, handleSupabaseError, isSupabaseAvailable } from '../lib/supabase';
 
-// Improved sanitizeData function to prevent infinite loops
 const sanitizeData = (obj, depth = 0, maxDepth = 10) => {
     // Prevent deep recursion
     if (depth > maxDepth) {
@@ -54,14 +53,72 @@ const sanitizeData = (obj, depth = 0, maxDepth = 10) => {
     return sanitized;
 };
 
+// Helper function to generate daily reset order number
+const generateOrderNumber = async () => {
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD format
+
+    try {
+        if (!isSupabaseAvailable()) {
+            return `ORD-${dateStr}-${String(Date.now()).slice(-4)}`;
+        }
+
+        const client = supabaseService || supabase;
+
+        // Get today's start and end timestamps
+        const startOfDay = new Date(today);
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const endOfDay = new Date(today);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const { data: todayOrders, error } = await client
+            .from('orders')
+            .select('order_number')
+            .gte('created_at', startOfDay.toISOString())
+            .lte('created_at', endOfDay.toISOString())
+            .like('order_number', `ORD-${dateStr}-%`)
+            .order('order_number', { ascending: false })
+            .limit(1);
+
+        if (error) {
+            console.warn('Error fetching today orders for numbering:', error);
+            return `ORD-${dateStr}-${String(Date.now()).slice(-4)}`;
+        }
+
+        let nextSequence = 1;
+
+        if (todayOrders && todayOrders.length > 0) {
+            // Extract sequence number from the latest order
+            const latestOrderNumber = todayOrders[0].order_number;
+            const sequencePart = latestOrderNumber.split('-')[2]; // Get the NNNN part
+
+            if (sequencePart && !isNaN(sequencePart)) {
+                nextSequence = parseInt(sequencePart) + 1;
+            }
+        }
+
+        // Format sequence as 4-digit number with leading zeros
+        const sequenceStr = String(nextSequence).padStart(4, '0');
+
+        return `ORD-${dateStr}-${sequenceStr}`;
+
+    } catch (error) {
+        console.error('Error generating order number:', error);
+        // Fallback to timestamp-based numbering
+        return `ORD-${dateStr}-${String(Date.now()).slice(-4)}`;
+    }
+};
+
 const orderService = {
     async createOrder(orderData) {
         if (!isSupabaseAvailable()) {
-            return new Promise((resolve) => {
-                setTimeout(() => {
+            return new Promise(async (resolve) => {
+                setTimeout(async () => {
+                    const orderNumber = await generateOrderNumber();
                     const mockOrder = {
                         id: Date.now(),
-                        order_number: `ORD-${Date.now()}`,
+                        order_number: orderNumber,
                         ...orderData,
                         payment_status: orderData.payment_status || 'paid',
                         order_status: orderData.payment_status === 'pending' ? 'pending' : 'completed',
@@ -73,8 +130,6 @@ const orderService = {
         }
 
         try {
-            // Create a clean copy of orderData without circular references
-            // First, extract only the data we need (no DOM elements)
             const cleanOrderData = {
                 customer_id: orderData.customer_id,
                 user_id: orderData.user_id,
@@ -94,7 +149,6 @@ const orderService = {
                 })) : []
             };
 
-            // Now safely stringify to remove any remaining references
             try {
                 const safeData = JSON.parse(JSON.stringify(cleanOrderData));
                 Object.assign(cleanOrderData, safeData);
@@ -110,7 +164,6 @@ const orderService = {
                 throw new Error('Customer ID is required');
             }
 
-            // Handle user_id - convert to integer or set to null
             if (cleanOrderData.user_id) {
                 const userIdInt = parseInt(cleanOrderData.user_id);
                 cleanOrderData.user_id = isNaN(userIdInt) ? null : userIdInt;
@@ -149,7 +202,7 @@ const orderService = {
                 cleanOrderData.order_status = 'completed';
             }
 
-            // Prepare order insert data
+            // Prepare order insert data (let database trigger generate order_number)
             const orderInsertData = {
                 customer_id: cleanOrderData.customer_id,
                 user_id: cleanOrderData.user_id,
@@ -160,9 +213,6 @@ const orderService = {
                 notes: cleanOrderData.notes || null
             };
 
-            console.log('Inserting order:', orderInsertData);
-
-            // Use service client if available, otherwise use regular client
             const client = supabaseService || supabase;
 
             // Insert order
@@ -266,7 +316,6 @@ const orderService = {
                 `)
                 .order('created_at', { ascending: false });
 
-            // Apply filters
             if (filters.date_from) {
                 query = query.gte('created_at', filters.date_from);
             }
@@ -496,6 +545,96 @@ const orderService = {
                 total_revenue: 0,
                 top_products: []
             };
+        }
+    },
+
+    // Get today's order count for display purposes
+    async getTodayOrderCount() {
+        try {
+            if (!isSupabaseAvailable()) {
+                return 0;
+            }
+
+            const today = new Date();
+            const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+
+            const startOfDay = new Date(today);
+            startOfDay.setHours(0, 0, 0, 0);
+
+            const endOfDay = new Date(today);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            const client = supabaseService || supabase;
+
+            const { data, error } = await client
+                .from('orders')
+                .select('id', { count: 'exact' })
+                .gte('created_at', startOfDay.toISOString())
+                .lte('created_at', endOfDay.toISOString())
+                .like('order_number', `ORD-${dateStr}-%`);
+
+            if (error) {
+                console.warn('Error getting today order count:', error);
+                return 0;
+            }
+
+            return data?.length || 0;
+        } catch (error) {
+            console.error('Error in getTodayOrderCount:', error);
+            return 0;
+        }
+    },
+
+    // Get next order number (preview) without creating an order
+    async getNextOrderNumber() {
+        try {
+            const today = new Date();
+            const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+
+            if (!isSupabaseAvailable()) {
+                return `ORD-${dateStr}-0001`;
+            }
+
+            const client = supabaseService || supabase;
+
+            const startOfDay = new Date(today);
+            startOfDay.setHours(0, 0, 0, 0);
+
+            const endOfDay = new Date(today);
+            endOfDay.setHours(23, 59, 59, 999);
+
+            const { data: todayOrders, error } = await client
+                .from('orders')
+                .select('order_number')
+                .gte('created_at', startOfDay.toISOString())
+                .lte('created_at', endOfDay.toISOString())
+                .like('order_number', `ORD-${dateStr}-%`)
+                .order('order_number', { ascending: false })
+                .limit(1);
+
+            if (error) {
+                console.warn('Error getting next order number:', error);
+                return `ORD-${dateStr}-0001`;
+            }
+
+            let nextSequence = 1;
+
+            if (todayOrders && todayOrders.length > 0) {
+                const latestOrderNumber = todayOrders[0].order_number;
+                const sequencePart = latestOrderNumber.split('-')[2];
+
+                if (sequencePart && !isNaN(sequencePart)) {
+                    nextSequence = parseInt(sequencePart) + 1;
+                }
+            }
+
+            const sequenceStr = String(nextSequence).padStart(4, '0');
+            return `ORD-${dateStr}-${sequenceStr}`;
+        } catch (error) {
+            console.error('Error in getNextOrderNumber:', error);
+            const today = new Date();
+            const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+            return `ORD-${dateStr}-0001`;
         }
     }
 };

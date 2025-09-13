@@ -177,7 +177,7 @@ class ReceiptFormatter {
         receipt += ESC_POS.TXT_2HEIGHT;
         receipt += ' KEBAB AL BEWOK\n';
         receipt += ESC_POS.TXT_NORMAL;
-        receipt += 'Kebab & Burger\n';
+        receipt += 'Rasa Nikmat, Harga Bersahabat\n';
         receipt += 'Jl. Kalisari III, Kel. Kalisari, Pasar Rebo, Jakarta Timur 13790\n';
         receipt += 'Telp: 0823-1546-7329\n';
         receipt += this.separator() + '\n';

@@ -236,7 +236,6 @@ const OrdersPage = () => {
         loadOrders();
     }, []);
 
-    // Reset to first page when filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [filter, searchTerm, dateFilter]);
@@ -581,7 +580,7 @@ const OrdersPage = () => {
                         </tbody>
                     </table>
                 </div>
-                
+
                 {/* Pagination Controls */}
                 {totalPages > 1 && (
                     <div style={{
@@ -597,7 +596,7 @@ const OrdersPage = () => {
                         }}>
                             Menampilkan {startIndex + 1} - {Math.min(endIndex, filteredOrders.length)} dari {filteredOrders.length} pesanan
                         </div>
-                        
+
                         <div style={{
                             display: 'flex',
                             gap: kebabTheme.spacing.sm
@@ -618,7 +617,7 @@ const OrdersPage = () => {
                             >
                                 Sebelumnya
                             </button>
-                            
+
                             {/* Page Numbers */}
                             {Array.from({ length: totalPages }, (_, i) => i + 1)
                                 .filter(page => {
@@ -632,7 +631,7 @@ const OrdersPage = () => {
                                 .map((page, index, array) => {
                                     const prevPage = array[index - 1];
                                     const showEllipsis = prevPage && page - prevPage > 1;
-                                    
+
                                     return (
                                         <Fragment key={page}>
                                             {showEllipsis && (
@@ -662,7 +661,7 @@ const OrdersPage = () => {
                                     );
                                 })
                             }
-                            
+
                             <button
                                 onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                                 disabled={currentPage === totalPages}

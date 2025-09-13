@@ -16,7 +16,6 @@ const POSPage = ({ mockProducts, customerService }) => {
     const [selectedCategory, setSelectedCategory] = useState('kebab');
     const [cart, setCart] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
-    const [orderNumber, setOrderNumber] = useState(1);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [showPayment, setShowPayment] = useState(false);
     const [showPaymentMethod, setShowPaymentMethod] = useState(false);
@@ -562,8 +561,6 @@ const POSPage = ({ mockProducts, customerService }) => {
 
         try {
             const orderData = {
-                id: orderNumber,
-                order_number: `ORD-${orderNumber}`,
                 customer_name: selectedCustomer?.name || 'Walk-in',
                 total_amount: getTotalAmount(),
                 cashier: userProfile?.name || 'Admin'
@@ -693,7 +690,6 @@ const POSPage = ({ mockProducts, customerService }) => {
                 setShowPaymentMethod(false);
                 setSelectedPaymentMethod(null);
                 setCashAmount('');
-                setOrderNumber(prev => prev + 1);
 
                 if (currentPaymentMethod === 'unpaid') {
                     loadUnpaidOrders();
