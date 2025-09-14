@@ -53,7 +53,6 @@ const sanitizeData = (obj, depth = 0, maxDepth = 10) => {
     return sanitized;
 };
 
-// Helper function to generate daily reset order number
 const generateOrderNumber = async () => {
     const today = new Date();
     const dateStr = today.toISOString().slice(0, 10).replace(/-/g, ''); // YYYYMMDD format
@@ -388,6 +387,39 @@ const orderService = {
         }
     },
 
+    async deleteOrder(orderId) {
+        if (!isSupabaseAvailable()) {
+            return true;
+        }
+
+        try {
+            const { error: orderErr } = await supabase
+                .from('orders')
+                .delete()
+                .eq('id', orderId);
+
+            if (orderErr) {
+                console.error(`Failed to delete record on Orders table with id: ${orderId} and reason: ${orderErr}`);
+                return false;
+            }
+
+            const { error: orderItemsErr } = await supabase
+                .from('order_items')
+                .delete()
+                .eq('order_id', orderId);
+
+            if (orderItemsErr) {
+                console.error(`Failed to delete record on order_items table with order_id: ${orderId} and reason: ${orderItemsErr}`);
+                return false;
+            }
+
+            return true;
+        } catch (e) {
+            console.error('Error in delete orders:', e);
+            return false;
+        }
+    },
+
     async updateOrderStatus(id, status) {
         if (!isSupabaseAvailable()) {
             return true;
@@ -548,7 +580,6 @@ const orderService = {
         }
     },
 
-    // Get today's order count for display purposes
     async getTodayOrderCount() {
         try {
             if (!isSupabaseAvailable()) {
