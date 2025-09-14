@@ -1,4 +1,11 @@
-// ESC/POS Commands for Thermal Printer
+const repharaseOptions = {
+    "size": "Ukuran",
+    "topping": "Topping",
+    "specialNote": "Note",
+    "spice_level": "Tingkat Kepedasan",
+    "meat_type": "Tipe Daging"
+};
+
 const ESC_POS = {
     // Printer hardware
     HW_INIT: '\x1b\x40',                    // Initialize printer
@@ -101,21 +108,27 @@ class ReceiptFormatter {
         return date.toLocaleString('id-ID', options);
     }
 
-    // Generate kitchen receipt
     generateKitchenReceipt(order, items) {
         let receipt = '';
 
-        // Initialize printer
         receipt += ESC_POS.HW_INIT;
 
-        // Header
+        let orderDisplayNumber = '';
+        if (order.order_number) {
+            const orderNumber = order.order_number;
+            const lastHyphenIndex = orderNumber.lastIndexOf('-');
+            if (lastHyphenIndex !== -1) {
+                const extractedNumber = orderNumber.substring(lastHyphenIndex + 1);
+                orderDisplayNumber = `    #${parseInt(extractedNumber, 10)}`;
+            }
+        }
+
         receipt += ESC_POS.TXT_ALIGN_CENTER;
         receipt += ESC_POS.TXT_2HEIGHT;
-        receipt += 'KITCHEN ORDER\n';
+        receipt += `KEBAB AL BEWOK${orderDisplayNumber}\n`;
         receipt += ESC_POS.TXT_NORMAL;
         receipt += this.separator() + '\n';
 
-        // Order info
         receipt += ESC_POS.TXT_ALIGN_LEFT;
         receipt += ESC_POS.TXT_BOLD_ON;
         receipt += `Order #${order.order_number || order.id}\n`;
@@ -124,24 +137,21 @@ class ReceiptFormatter {
         receipt += `Time: ${this.formatDateTime()}\n`;
         receipt += this.separator() + '\n';
 
-        // Items
         receipt += ESC_POS.TXT_BOLD_ON;
         receipt += 'ITEMS:\n';
         receipt += ESC_POS.TXT_BOLD_OFF;
 
         items.forEach(item => {
-            // Item name in bold
             receipt += ESC_POS.TXT_BOLD_ON;
             receipt += `${item.quantity || 1}x ${item.name}\n`;
             receipt += ESC_POS.TXT_BOLD_OFF;
 
-            // Options/notes
             if (item.options) {
                 Object.entries(item.options).forEach(([key, value]) => {
                     if (value && key !== 'specialNote') {
                         const displayValue = Array.isArray(value) ? value.join(', ') : value;
                         if (displayValue) {
-                            receipt += `   - ${key}: ${displayValue}\n`;
+                            receipt += `   - ${repharaseOptions[key]}: ${displayValue}\n`;
                         }
                     }
                 });
@@ -153,26 +163,21 @@ class ReceiptFormatter {
             receipt += '\n';
         });
 
-        // Footer
         receipt += this.separator() + '\n';
         receipt += ESC_POS.TXT_ALIGN_CENTER;
         receipt += 'SEGERA DISIAPKAN\n';
 
-        // Cut paper
         receipt += '\n\n\n';
         receipt += ESC_POS.PAPER_PART_CUT;
 
         return receipt;
     }
 
-    // Generate customer receipt
     generateCustomerReceipt(order, items, paymentMethod, cashAmount = 0) {
         let receipt = '';
 
-        // Initialize printer
         receipt += ESC_POS.HW_INIT;
 
-        // Header
         receipt += ESC_POS.TXT_ALIGN_CENTER;
         receipt += ESC_POS.TXT_2HEIGHT;
         receipt += ' KEBAB AL BEWOK\n';
@@ -216,7 +221,7 @@ class ReceiptFormatter {
                     if (value && key !== 'specialNote') {
                         const displayValue = Array.isArray(value) ? value.join(', ') : value;
                         if (displayValue) {
-                            receipt += `   ${key}: ${displayValue}\n`;
+                            receipt += `   ${repharaseOptions[key]}: ${displayValue}\n`;
                         }
                     }
                 });
