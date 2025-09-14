@@ -449,16 +449,77 @@ const POSPage = ({ mockProducts, customerService }) => {
         }
     };
 
+    // Load cart from localStorage on component mount
     useEffect(() => {
+        loadCartFromStorage();
         loadProducts();
         loadUnpaidOrders();
         checkPrinterStatus();
-        
+
         // Check printer status periodically
         const printerInterval = setInterval(checkPrinterStatus, 2000);
-        
+
         return () => clearInterval(printerInterval);
     }, []);
+
+    // Save cart to localStorage whenever cart or customer changes
+    useEffect(() => {
+        saveCartToStorage();
+    }, [cart, selectedCustomer]);
+
+    // Load cart from localStorage
+    const loadCartFromStorage = () => {
+        try {
+            const savedCart = localStorage.getItem('pos_cart');
+            const savedCustomer = localStorage.getItem('pos_selected_customer');
+            
+            if (savedCart) {
+                const parsedCart = JSON.parse(savedCart);
+                if (Array.isArray(parsedCart) && parsedCart.length > 0) {
+                    setCart(parsedCart);
+                }
+            }
+            
+            if (savedCustomer) {
+                const parsedCustomer = JSON.parse(savedCustomer);
+                setSelectedCustomer(parsedCustomer);
+            }
+        } catch (error) {
+            console.error('Error loading cart from storage:', error);
+            // Clear corrupted data
+            localStorage.removeItem('pos_cart');
+            localStorage.removeItem('pos_selected_customer');
+        }
+    };
+
+    // Save cart to localStorage
+    const saveCartToStorage = () => {
+        try {
+            if (cart.length > 0) {
+                localStorage.setItem('pos_cart', JSON.stringify(cart));
+            } else {
+                localStorage.removeItem('pos_cart');
+            }
+            
+            if (selectedCustomer) {
+                localStorage.setItem('pos_selected_customer', JSON.stringify(selectedCustomer));
+            } else {
+                localStorage.removeItem('pos_selected_customer');
+            }
+        } catch (error) {
+            console.error('Error saving cart to storage:', error);
+        }
+    };
+
+    // Clear cart from localStorage
+    const clearCartFromStorage = () => {
+        try {
+            localStorage.removeItem('pos_cart');
+            localStorage.removeItem('pos_selected_customer');
+        } catch (error) {
+            console.error('Error clearing cart from storage:', error);
+        }
+    };
 
     // Check printer connection status
     const checkPrinterStatus = () => {
@@ -690,6 +751,9 @@ const POSPage = ({ mockProducts, customerService }) => {
                 setShowPaymentMethod(false);
                 setSelectedPaymentMethod(null);
                 setCashAmount('');
+                
+                // Clear cart from localStorage after successful order
+                clearCartFromStorage();
 
                 if (currentPaymentMethod === 'unpaid') {
                     loadUnpaidOrders();
@@ -1488,7 +1552,7 @@ const POSPage = ({ mockProducts, customerService }) => {
                                     <Printer size={18} />
                                     Printer Bluetooth
                                 </h4>
-                                
+
                                 {!printerConnected ? (
                                     <div>
                                         {isAutoReconnecting && (
@@ -1539,9 +1603,9 @@ const POSPage = ({ mockProducts, customerService }) => {
                                                 cursor: (connectingPrinter || isAutoReconnecting) ? 'not-allowed' : 'pointer'
                                             }}
                                         >
-                                            {connectingPrinter ? 'Menghubungkan...' : 
-                                             isAutoReconnecting ? 'Menghubungkan Ulang...' :
-                                             bluetoothPrinter.getSavedDeviceInfo() ? `Hubungkan ke ${printerDeviceName}` : 'Hubungkan Printer'}
+                                            {connectingPrinter ? 'Menghubungkan...' :
+                                                isAutoReconnecting ? 'Menghubungkan Ulang...' :
+                                                    bluetoothPrinter.getSavedDeviceInfo() ? `Hubungkan ke ${printerDeviceName}` : 'Hubungkan Printer'}
                                         </button>
                                     </div>
                                 ) : (
@@ -1565,9 +1629,9 @@ const POSPage = ({ mockProducts, customerService }) => {
                                             <span>✓</span>
                                             <div>
                                                 <div>Printer Terhubung</div>
-                                                <div style={{ 
+                                                <div style={{
                                                     fontSize: kebabTheme.typography.fontSize.xs,
-                                                    opacity: 0.8 
+                                                    opacity: 0.8
                                                 }}>{printerDeviceName}</div>
                                             </div>
                                         </div>
@@ -1774,21 +1838,18 @@ const POSPage = ({ mockProducts, customerService }) => {
                                         borderRadius: kebabTheme.borderRadius.lg,
                                         marginBottom: kebabTheme.spacing.xl
                                     }}>
-                                        <div style={{
-                                            fontSize: '4rem',
-                                            marginBottom: kebabTheme.spacing.md
-                                        }}>📱</div>
-                                        <h4 style={{
-                                            margin: `0 0 ${kebabTheme.spacing.sm} 0`,
-                                            color: kebabTheme.colors.textPrimary,
-                                            fontSize: kebabTheme.typography.fontSize.lg,
-                                            fontWeight: kebabTheme.typography.fontWeight.semibold
-                                        }}>Scan QR Code</h4>
-                                        <p style={{
-                                            margin: 0,
-                                            color: kebabTheme.colors.textSecondary,
-                                            fontSize: kebabTheme.typography.fontSize.sm
-                                        }}>Customer scan QR code untuk melakukan pembayaran</p>
+                                        <img
+                                            src='https://ocourlauakdvfyxcvlgq.supabase.co/storage/v1/object/public/albewok/QRMerchantBCA-14092025-130832.png'
+                                            alt='albewok-qris'
+                                            style={{
+                                                maxWidth: '100%',
+                                                width: '300px',
+                                                height: 'auto',
+                                                borderRadius: kebabTheme.borderRadius.md,
+                                                display: 'block',
+                                                margin: '0 auto'
+                                            }}
+                                        />
                                     </div>
 
                                     {/* Payment Status */}
